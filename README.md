@@ -1,6 +1,7 @@
 # Lda2vec-Tensorflow
 Tensorflow 1.5 implementation of Chris Moody's Lda2vec, adapted from @meereeum
 
+[Link to download common crawl 6B Glove Embeddings](https://nlp.stanford.edu/projects/glove/)
 
 ## Usage
 
