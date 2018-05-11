@@ -166,7 +166,7 @@ class Lda2vec():
         num_batches = data_size // self.batch_size
 
         saver = tf.train.Saver()
-        writer = tf.summary.FileWriter("logdir/", graph=self.sesh.graph)
+        writer = tf.summary.FileWriter("logdir" + "/", graph=self.sesh.graph)
 
         for e in range(num_epochs):
             print("\nEPOCH:", e + 1)
@@ -183,8 +183,9 @@ class Lda2vec():
                     writer.add_summary(summary, step)
                     writer.flush()
                     writer.close()
-                    save_path = saver.save(self.sesh, self.logdir + "\\model.ckpt")
-                    writer = tf.summary.FileWriter("logdir/", graph=self.sesh.graph)
+                    save_path = saver.save(self.sesh, self.logdir + "/model.ckpt")
+                    writer = tf.summary.FileWriter(self.logdir + "/", graph=self.sesh.graph)
+        save_path = saver.save(self.sesh, self.logdir + "/model.ckpt")
 
     def predict(self, pivot_words, doc_ids, temp_batch_size):
         context = self.sesh.run([self.context], feed_dict={self.x: pivot_words})
