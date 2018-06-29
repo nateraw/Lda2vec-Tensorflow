@@ -71,11 +71,8 @@ df = pd.read_csv(file_out_path, sep="\t", header=None)
 # Extract data arrays from dataframe
 pivot_ids    = df[0].values
 target_ids   = df[1].values
-doc_ids      = df[1].values
+doc_ids      = df[2].values
 
-# Create dummy additional feature
-dummy = np.random.randint(100, size=len(doc_ids))
-dummy2 = np.random.randint(200, size=len(doc_ids))
 # Shuffle the data
 pivot_ids, target_ids, doc_ids = shuffle(pivot_ids, target_ids, doc_ids, random_state=0)
 
@@ -90,10 +87,7 @@ m = model(num_docs,
                 num_topics = num_topics,
                 embedding_size = embed_size,
                 freqs = freqs,
-                additional_features_info=[100, 200],
-                additional_features_names=["dummy1", "dummy2"],
-                logdir="logdir_180629_1351",
-                restore=True)
+                restore=False)
 
 # Train the model
 m.train(pivot_ids,target_ids,doc_ids, len(pivot_ids), 10, context_ids=np.array([dummy, dummy2]), switch_loss_epoch=5)
