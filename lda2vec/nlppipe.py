@@ -1,8 +1,7 @@
 import numpy as np
 import pandas as pd
 import spacy
-from spacy.attrs import LOWER, LIKE_URL, LIKE_EMAIL, ORTH, IS_PUNCT, LEMMA, IS_OOV
-from spacy.pipeline import Tagger, DependencyParser, EntityRecognizer
+from spacy.attrs import *
 import gensim
 from gensim.models.doc2vec import TaggedDocument
 from gensim.models import Doc2Vec
@@ -11,6 +10,7 @@ import os
 
 import sys
 import time
+
 '''
 TODO - 
 
@@ -18,30 +18,32 @@ TODO -
 2) Add multiple contexts to tfrecords writer function
 3) Add inferred compression type based off of file name in tfrecords writer function
 '''
+
+
 class NlpPipeline:
 
-    def __init__(self, textfile, max_length, context=False, sep="\t", usecols=None, tokenize_sentences = False, num_sentences = 4, gn_path=None, use_google_news=False,
-                nlp=None, nlp_object_path = None, vectors=None, skip="<SKIP>", merge=False, num_threads=2, delete_punctuation=False,
-                token_type="lower", skip_oov=False, save_tokenized_text_data=False, bad_deps=("amod", "compound")):
-        
-
-
+    def __init__(self, textfile, max_length, context=False, sep="\t", usecols=None, tokenize_sentences=False,
+                 num_sentences=4, gn_path=None, use_google_news=False,
+                 nlp=None, nlp_object_path=None, vectors=None, skip="<SKIP>", merge=False, num_threads=2,
+                 delete_punctuation=False,
+                 token_type="lower", skip_oov=False, save_tokenized_text_data=False, bad_deps=("amod", "compound"),
+                 texts=None, only_keep_alpha=False):
 
         """Summary
-        
+
         Args:
             textfile (str): Path to the line delimited text file
             max_length (int): Length to limit/pad sequences to
             context (bool, optional): If this parameter is False, we assume reviews delimited by new lines.
                                       If this parameter is True, we will load the data into a dataframe to extract labels/context
             sep (str, optional): Delimiter for csv/text files when context is True
-            usecols (None, optional): List of column names to extract when context=True. 
+            usecols (None, optional): List of column names to extract when context=True.
                                       *NOTE: The first name passed should be the column name for the text to be tokenized*
             tokenize_sentences (bool, optional): Description
             num_sentences (int, optional): Description
             gn_path (str): Path to google news vectors bin file if nlp object has not been saved yet
             use_google_news (bool, optional): If True, we will use google news vectors stored at gn_path (or elsewhere)
-            nlp (None, optional): Pre-initialized Spacy NLP object 
+            nlp (None, optional): Pre-initialized Spacy NLP object
             nlp_object_path (None, optional): When passed, it will load the nlp object found in this path
             vectors (None, optional): Description
             skip (str, optional): Short documents will be padded with this variable up until max_length
@@ -49,14 +51,12 @@ class NlpPipeline:
             num_threads (int, optional): Number of threads to parallelize the pipeline
             delete_punctuation (bool, optional): When set to true, punctuation will be deleted when tokenizing
             token_type (str, optional): String denoting type of token for tokenization. Options are "lower", "lemma", and "orth"
-            skip_oov (bool, optional): When set to true, it will replace out of vocabulary words with skip token. 
+            skip_oov (bool, optional): When set to true, it will replace out of vocabulary words with skip token.
                                        Note: Setting this to false when planning to initialize random vectors will allow for learning
                                        the out of vocabulary words/phrases.
             save_tokenized_text_data (bool, optional): Description
             bad_deps (tuple, optional): Description
         """
-
-
 
         self.gn_path = gn_path
         self.textfile = textfile
@@ -77,15 +77,16 @@ class NlpPipeline:
         self.num_sentences = num_sentences
         self.nlp_object_path = nlp_object_path
         self.vectors = vectors
-        self.texts = None
+        self.texts = texts
         self.tokenizing_new = False
+        self.only_keep_alpha = only_keep_alpha
 
         # If a spacy nlp object is not passed to init
-        if self.nlp==None:
+        if self.nlp == None:
             # Load nlp object from path provided
             if nlp_object_path:
-                self.nlp=spacy.load(self.nlp_object_path)
-            # Load google news from binary file 
+                self.nlp = spacy.load(self.nlp_object_path)
+            # Load google news from binary file
             elif self.gn_path:
                 self.load_google_news()
             # Use vectors path from saved dist-packages location
@@ -127,7 +128,6 @@ class NlpPipeline:
         # Set the vectors for our nlp object to the google news vectors
         self.nlp.vocab.vectors = spacy.vocab.Vectors(data=self.model.syn0, keys=self.keys)
 
-
     def tokenize(self):
         # This is here in case we want to tokenize more documents later
         if self.texts == None:
@@ -153,10 +153,10 @@ class NlpPipeline:
 
         # Get number of documents supplied
         self.num_docs = len(self.texts)
-        
+
         # Init data as a bunch of zeros - shape [num_texts, max_length]
         self.data = np.zeros((len(self.texts), self.max_length), dtype=np.uint64)
-        
+
         if not self.tokenizing_new:
             # Add the skip token to the vocab, creating a unique hash for it
             self.nlp.vocab.strings.add(self.skip)
@@ -172,8 +172,8 @@ class NlpPipeline:
         if self.tokenize_sentences:
             self.sentence_tokenize()
             return
-        print("about to enter that pipe")
-        for row, doc in enumerate(self.nlp.pipe(self.texts, n_threads=self.num_threads, batch_size=1000)):
+
+        for row, doc in enumerate(self.nlp.pipe(self.texts, n_threads=self.num_threads, batch_size=10000)):
             try:
                 if self.merge:
                     # Make list to hold merged phrases. Necessary to avoid buggy spacy merge implementation
@@ -184,7 +184,7 @@ class NlpPipeline:
                             phrase = phrase[1:]
                         if len(phrase) > 1:
                             phrase_list.append(phrase)
-                    
+
                     # Merge phrases onto doc using doc.merge. Phrase.merge breaks.
                     if len(phrase_list) > 0:
                         for _phrase in phrase_list:
@@ -198,7 +198,7 @@ class NlpPipeline:
                     for ent in doc.ents:
                         if len(ent) > 1:
                             ent_list.append(ent)
-                    
+
                     # Merge entities onto doc using doc.merge. ent.merge breaks.
                     if len(ent_list) > 0:
                         for _ent in ent_list:
@@ -217,9 +217,9 @@ class NlpPipeline:
                     # Replaces spaces between phrases with underscore
                     text = token.text.replace(" ", "_")
                     # Get the string token for the given token type
-                    if self.token_type=="lower":
+                    if self.token_type == "lower":
                         _token = token.lower_
-                    elif self.token_type=="lemma":
+                    elif self.token_type == "lemma":
                         _token = token.lemma_
                     else:
                         _token = token.orth_
@@ -235,12 +235,12 @@ class NlpPipeline:
                     self.text_data.append(doc_text)
 
                 # Options for how to tokenize
-                if self.token_type=="lower":
-                    dat = doc.to_array([LOWER, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT])
-                elif self.token_type=="lemma":
-                    dat = doc.to_array([LEMMA, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT])
+                if self.token_type == "lower":
+                    dat = doc.to_array([LOWER, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT, IS_ALPHA])
+                elif self.token_type == "lemma":
+                    dat = doc.to_array([LEMMA, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT, IS_ALPHA])
                 else:
-                    dat = doc.to_array([ORTH, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT])
+                    dat = doc.to_array([ORTH, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT, IS_ALPHA])
 
                 if len(dat) > 0:
                     msg = "Negative indices reserved for special tokens"
@@ -250,20 +250,23 @@ class NlpPipeline:
                         idx = (dat[:, 1] > 0) | (dat[:, 2] > 0) | (dat[:, 3] > 0)
                     else:
                         # Get Indexes of email and URL tokens
-                        idx = (dat[:, 1] > 0) | (dat[:, 2] > 0)                    
-                    # Replace email and URL tokens with skip token
+                        idx = (dat[:, 1] > 0) | (dat[:, 2] > 0)
+                        # Replace email and URL tokens with skip token
                     dat[idx] = self.skip
                     # Delete punctuation
                     if self.delete_punctuation:
-                        delete = np.where(dat[:,3]==1)
+                        delete = np.where(dat[:, 4] == 1)
+                        dat = np.delete(dat, delete, 0)
+                    if self.only_keep_alpha == True:
+                        delete = np.where(dat[:, 5] == 0)
                         dat = np.delete(dat, delete, 0)
                     length = min(len(dat), self.max_length)
                     self.data[row, :length] = dat[:length, 0].ravel()
             except Exception as e:
-                print("Warning! Document", row, "broke, likely due to spaCy merge issues.\nMore info at their github, issues #1547 and #1474")
+                print("Warning! Document", row,
+                      "broke, likely due to spaCy merge issues.\nMore info at their github, issues #1547 and #1474")
                 self.purged_docs.append(row)
                 continue
-        print("passed over the pipe")
 
         # If necessary, delete documents that failed to tokenize correctly.
         self.data = np.delete(self.data, self.purged_docs, 0).astype(np.uint64)
@@ -276,11 +279,11 @@ class NlpPipeline:
         # Manually putting in this hash for the padding ID
         self.hash_to_word[self.skip] = '<SKIP>'
         # If lemma, manually put in hash for the pronoun ID
-        if self.token_type=="lemma":
+        if self.token_type == "lemma":
             self.hash_to_word[self.nlp.vocab.strings["-PRON-"]] = "-PRON-"
-        
+
         for v in self.uniques:
-            if v!= self.skip:
+            if v != self.skip:
                 try:
                     if self.token_type == "lower":
                         self.hash_to_word[v] = self.nlp.vocab[v].lower_
@@ -291,11 +294,10 @@ class NlpPipeline:
                 except:
                     pass
 
-    def sentence_tokenize(self,):        
+    def sentence_tokenize(self, ):
         # Data will have shape [Num Docs, None, Seq_Len]
         self.data = np.zeros([self.num_docs, self.num_sentences, self.max_length], dtype=np.uint64)
         self.data[:] = self.skip
-
 
         try:
             for row, full_doc in enumerate(self.nlp.pipe(self.texts, n_threads=self.num_threads, batch_size=10000)):
@@ -319,7 +321,7 @@ class NlpPipeline:
                                     phrase = phrase[1:]
                                 if len(phrase) > 1:
                                     phrase_list.append(phrase)
-                            
+
                             # Merge phrases onto doc using doc.merge. Phrase.merge breaks.
                             if len(phrase_list) > 0:
                                 for _phrase in phrase_list:
@@ -333,7 +335,7 @@ class NlpPipeline:
                             for ent in doc.ents:
                                 if len(ent) > 1:
                                     ent_list.append(ent)
-                            
+
                             # Merge entities onto doc using doc.merge. ent.merge breaks.
                             if len(ent_list) > 0:
                                 for _ent in ent_list:
@@ -351,9 +353,9 @@ class NlpPipeline:
                             # Replaces spaces between phrases with underscore
                             text = token.text.replace(" ", "_")
                             # Get the string token for the given token type
-                            if self.token_type=="lower":
+                            if self.token_type == "lower":
                                 _token = token.lower_
-                            elif self.token_type=="lemma":
+                            elif self.token_type == "lemma":
                                 _token = token.lemma_
                             else:
                                 _token = token.orth_
@@ -369,9 +371,9 @@ class NlpPipeline:
                             self.text_data.append(doc_text)
 
                         # Options for how to tokenize
-                        if self.token_type=="lower":
+                        if self.token_type == "lower":
                             dat = doc.to_array([LOWER, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT])
-                        elif self.token_type=="lemma":
+                        elif self.token_type == "lemma":
                             dat = doc.to_array([LEMMA, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT])
                         else:
                             dat = doc.to_array([ORTH, LIKE_EMAIL, LIKE_URL, IS_OOV, IS_PUNCT])
@@ -384,28 +386,28 @@ class NlpPipeline:
                                 idx = (dat[:, 1] > 0) | (dat[:, 2] > 0) | (dat[:, 3] > 0)
                             else:
                                 # Get Indexes of email and URL tokens
-                                idx = (dat[:, 1] > 0) | (dat[:, 2] > 0)                    
-                            # Replace email and URL tokens with skip token
+                                idx = (dat[:, 1] > 0) | (dat[:, 2] > 0)
+                                # Replace email and URL tokens with skip token
                             dat[idx] = self.skip
                             # Delete punctuation
                             if self.delete_punctuation:
-                                delete = np.where(dat[:,3]==1)
+                                delete = np.where(dat[:, 3] == 1)
                                 dat = np.delete(dat, delete, 0)
-
 
                             length = min(len(dat), self.max_length)
 
                             # Get sentence token data
-                            #sent_data[:length] = dat[:length, 0].ravel()
+                            # sent_data[:length] = dat[:length, 0].ravel()
                             self.data[row, sent_idx, :length] = dat[:length, 0].ravel()
                             # Append sentence data to doc data
-                            #doc_data.append(sent_data.tolist())
+                            # doc_data.append(sent_data.tolist())
 
                     except Exception as e:
-                        #exc_type, exc_obj, exc_tb = sys.exc_info()
-                        #fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-                        #print(row, exc_type, e, exc_tb.tb_lineno)
-                        print("Warning! Document", row, "broke, likely due to spaCy merge issues.\nMore info at thier github, issues #1547 and #1474")
+                        # exc_type, exc_obj, exc_tb = sys.exc_info()
+                        # fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                        # print(row, exc_type, e, exc_tb.tb_lineno)
+                        print("Warning! Document", row,
+                              "broke, likely due to spaCy merge issues.\nMore info at thier github, issues #1547 and #1474")
                         self.purged_docs.append(row)
                         continue
         except Exception as e:
@@ -424,7 +426,7 @@ class NlpPipeline:
                 self.uniques = np.append(self.uniques, self.data[document][sentence])
 
         # Unique tokens
-        #self.uniques = np.unique(self.data.flatten())
+        # self.uniques = np.unique(self.data.flatten())
         # Saved Spacy Vocab
         self.vocab = self.nlp.vocab
         # Making an idx to word mapping for vocab
@@ -432,11 +434,11 @@ class NlpPipeline:
         # Manually putting in this hash for the padding ID
         self.hash_to_word[self.skip] = '<SKIP>'
         # If lemma, manually put in hash for the pronoun ID
-        if self.token_type=="lemma":
+        if self.token_type == "lemma":
             self.hash_to_word[self.nlp.vocab.strings["-PRON-"]] = "-PRON-"
-        
+
         for v in self.uniques:
-            if v!= self.skip:
+            if v != self.skip:
                 try:
                     if self.token_type == "lower":
                         self.hash_to_word[v] = self.nlp.vocab[v].lower_
@@ -449,29 +451,29 @@ class NlpPipeline:
 
     def _compute_embed_matrix(self, random=False, embed_size=256, compute_tensor=False, tf_as_variable=True):
         """Computes the embedding matrix in a couple of ways. You can either initialize it randomly
-        or you can load the embedding matrix from pretrained embeddings. 
-        
+        or you can load the embedding matrix from pretrained embeddings.
+
         Additionally, you can use this function to compute your embedding matrix as a tensorflow
         variable or tensorflow constant.
-        
+
         The numpy embedding matrix will be stored in self.embed_matrix
         The tensorflow embed matrix will be stored in self.embed_matrix_tensor if compute_tf is True
-        
+
         Args:
             random (bool, optional): If set to true, it will initialize the embedding matrix randomly
             embed_size (int, optional): If setting up random embedding matrix, you can control the embedding size.
-            compute_tensor (bool, optional): 
+            compute_tensor (bool, optional):
                 When set to True, it will turn the embedding matrix into a tf variable or constant.
                 See tf_as_variable to control whether embed_matrix_tensor is a variable or constant.
-            tf_as_variable (bool, optional): If True AND compute_tf is True, this will save embed_matrix_tensor as a tf variable. 
+            tf_as_variable (bool, optional): If True AND compute_tf is True, this will save embed_matrix_tensor as a tf variable.
                 If this is set to False, it will compute embed_matrix_tensor as a tf constant.
-        
+
         """
-        #Returns list of values and their frequencies
-        self.unique, self.freqs= np.unique(self.data, return_counts=True)
+        # Returns list of values and their frequencies
+        self.unique, self.freqs = np.unique(self.data, return_counts=True)
 
         ##Sort unique hash id values by frequency
-        self.hash_ids = [x for _,x in sorted(zip(self.freqs, self.unique), reverse=True)]
+        self.hash_ids = [x for _, x in sorted(zip(self.freqs, self.unique), reverse=True)]
         self.freqs = sorted(self.freqs, reverse=True)
 
         ##Create word id's starting at 0
@@ -480,16 +482,19 @@ class NlpPipeline:
         self.hash_to_idx = dict(zip(self.hash_ids, self.word_ids))
         self.idx_to_hash = dict(zip(self.word_ids, self.hash_ids))
 
-        self.compute_idx_helpers()
+        # Dont compute helpers here. We will do it at the same time as the embed matrix,
+        # if we are not initializing the embedding matrix randomly.
+        # Otherwise, we will go ahead and call it within the if random section
+        # self.compute_idx_helpers()
 
         # Generate random embedding instead of using pretrained embeddings
         if random:
+            self.compute_idx_helpers()
             self.embed_size = embed_size
             self.vocab_size = len(self.unique)
-            self.embed_matrix = np.random.uniform(-1,1,[self.vocab_size, self.embed_size])
+            self.embed_matrix = np.random.uniform(-1, 1, [self.vocab_size, self.embed_size])
             if compute_tensor:
                 self.compute_embedding_tensor(variable=tf_as_variable)
-            
 
             return
 
@@ -499,8 +504,28 @@ class NlpPipeline:
         # Initialize vector to hold our embedding matrix
         embed_matrix = []
 
+        self.vocabulary = np.array([])
+        self.idx_to_word = {}
+        # for i, hash_id in enumerate(self.hash_ids):
+        #     # Extract word for given hash
+        #     word = self.nlp.vocab.strings[hash_id]
+        #     # Append word onto unique vocabulary list
+        #     self.vocabulary = np.append(self.vocabulary, word)
+        #     # Add key/value pair to idx_to_word dictionary
+        #     self.idx_to_word[i] = word
+        # self.word_to_idx = {v: k for k, v in self.idx_to_word.items()}
+
         # Loop through hash IDs, they are in order of highest frequency to lowest
         for i, h in enumerate(self.hash_ids):
+            # Extract word for given hash
+            word = self.nlp.vocab.strings[h]
+
+            # Append word onto unique vocabulary list
+            self.vocabulary = np.append(self.vocabulary, word)
+
+            # Add key/value pair to idx_to_word dictionary
+            self.idx_to_word[i] = word
+
             # Extract vector for the given hash ID
             vector = self.nlp.vocab[h].vector
 
@@ -508,10 +533,12 @@ class NlpPipeline:
             if np.array_equal(zeros, vector):
                 # TODO Get rid of this random uniform vector!!
                 # If oov, init a random uniform vector
-                vector = np.random.uniform(-1,1,300)
+                vector = np.random.uniform(-1, 1, 300)
 
-            # Append current vector to our embed matrix         
+            # Append current vector to our embed matrix
             embed_matrix.append(vector)
+        # Flip idx_to_word dictionary and save it to the class
+        self.word_to_idx = {v: k for k, v in self.idx_to_word.items()}
 
         # Save np embed matrix to the class for later use
         self.embed_matrix = np.array(embed_matrix)
@@ -520,10 +547,9 @@ class NlpPipeline:
         if compute_tensor:
             self.compute_embedding_tensor(variable=tf_as_variable)
 
-
     def compute_embedding_tensor(self, variable=True):
         """Summary
-        
+
         Args:
             variable (bool, optional): If variable is set to True, it will compute a tensorflow variable.
                                        If False, it will compute a tensorflow constant
@@ -536,9 +562,11 @@ class NlpPipeline:
         # Create embed matrix as tf constant
         else:
             self.embed_matrix_tensor = tf.Constant(embed_matrix_tensor)
+
     def convert_data_to_word2vec_indexes(self):
         # Uses hash to idx dictionary to map data to indexes
         self.idx_data = np.vectorize(self.hash_to_idx.get)(self.data)
+
     def compute_idx_helpers(self):
         self.vocabulary = np.array([])
         self.idx_to_word = {}
@@ -550,6 +578,7 @@ class NlpPipeline:
             # Add key/value pair to idx_to_word dictionary
             self.idx_to_word[i] = word
         self.word_to_idx = {v: k for k, v in self.idx_to_word.items()}
+
     def trim_zeros_from_idx_data(self, idx_data=None):
         """This will trim the tail zeros from the idx_data variable
         and replace the idx_data variable.
@@ -574,7 +603,7 @@ class NlpPipeline:
     def load_gensim_doc2vec(self, label=None, vector_size=128, window=5, min_count=5, workers=2):
         '''NOTE: To run this, make sure you had save_tokenized_text_data set to True when running tokenizer'''
         doc2vec_data = []
-        
+
         # If user supplies labels (in same length as number of docs), we can use those
         if label == None:
             label = np.arange(len(self.text_data)).tolist()
@@ -591,12 +620,11 @@ class NlpPipeline:
 
         return model, doc2vec_data
 
-    
     def make_example(self, sequence, context=None):
         # The object we return
         ex = tf.train.SequenceExample()
         # A non-sequential feature of our example - Replace with doc IDs
-        if context==None:
+        if context == None:
             context = self.doc_id
         else:
             context = context
@@ -613,7 +641,7 @@ class NlpPipeline:
         # The object we return
         ex = tf.train.SequenceExample()
         # A non-sequential feature of our example - Replace with doc IDs
-        if context==None:
+        if context == None:
             context = self.doc_id
         else:
             context = context
@@ -627,9 +655,11 @@ class NlpPipeline:
             fl_tokens.feature.add().int64_list.value.append(token)
             fl_labels.feature.add().int64_list.value.append(label)
         return ex
-    def write_data_to_tfrecords(self, outfile, compression="GZIP", data = np.array([]),
-                                labels=np.array([]), context=np.array([]), sequence_desc = "tokens", labels_desc="labels", context_desc="doc_id"):
-        if data.any()==False:
+
+    def write_data_to_tfrecords(self, outfile, compression="GZIP", data=np.array([]),
+                                labels=np.array([]), context=np.array([]), sequence_desc="tokens", labels_desc="labels",
+                                context_desc="doc_id"):
+        if data.any() == False:
             data = self.idx_data
 
         # What we want the feature column for context features to be named
@@ -642,9 +672,9 @@ class NlpPipeline:
         # Create int to hold unique document IDs, as these will be our context feature by default.
         self.doc_id = 1
 
-        if compression=="GZIP":
+        if compression == "GZIP":
             options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.GZIP)
-        elif compression=="ZLIB":
+        elif compression == "ZLIB":
             options = tf.python_io.TFRecordOptions(tf.python_io.TFRecordCompressionType.ZLIB)
         else:
             options = None
@@ -671,7 +701,8 @@ class NlpPipeline:
 
                 # Add 1 to our document ID because we are moving to the next document
                 self.doc_id += 1
-    def tokenize_new_texts(self, texts, convert_to_idx = True):
+
+    def tokenize_new_texts(self, texts, convert_to_idx=True):
         self.texts = texts
         self.tokenizing_new = True
         self.tokenize()
@@ -694,7 +725,7 @@ class NlpPipeline:
 
     def timer(self, message, end=False):
         """For timing different elements of the class
-        
+
         Args:
             end (bool, optional): If true, it will check timer_dict at the message to see what the time was that was taken
             message (None, optional): A message given that notes what we are timing

@@ -9,12 +9,9 @@ def dirichlet_likelihood(weights, alpha=None):
         alpha = 1.0 / n_topics
 
     log_proportions = tf.nn.log_softmax(weights)
-    #log_proportions = tf.nn.softmax(log_proportions)
     # Normal
-    #loss = (alpha - 1) * log_proportions
-    # Negative - it works
-    loss = -(alpha - 1) * log_proportions
-    # Abs Proportions + negative
-    #loss = -(alpha - 1) * tf.abs(log_proportions)
+    loss = (alpha - 1) * log_proportions
+    # Negative
+    #loss = -(alpha - 1) * log_proportions
 
     return tf.reduce_sum(loss)
