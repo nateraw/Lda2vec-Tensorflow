@@ -78,4 +78,4 @@ utils.generate_ldavis_data(data_path, run_name, m, idx_to_word, freqs, vocab_siz
 ```
 This will launch pyLDAvis in your browser, allowing you to visualize your results like this:
 
-![alt text](https://raw.githubusercontent.com/nateraw/Lda2vec-Tensorflow/master/images/pyLDAvis_results.png)
+![alt text](https://github.com/nateraw/Lda2vec-Tensorflow/blob/master/pyLDAvis_results.png)
