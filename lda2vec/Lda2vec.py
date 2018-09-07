@@ -1,7 +1,6 @@
 import tensorflow as tf, numpy as np, lda2vec.word_embedding as W, lda2vec.embedding_mixture as M, \
     lda2vec.dirichlet_likelihood as DL
 from datetime import datetime
-import os, sys
 
 
 class Lda2vec:

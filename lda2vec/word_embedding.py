@@ -1,4 +1,3 @@
-import numpy as np
 import tensorflow as tf
 
 
@@ -9,11 +8,6 @@ class Word_Embedding():
         self.sample_size = sample_size
         self.power = power
         self.freqs = freqs
-
-        # self.Embedding = tf.cond(load_embeds,
-        #                          lambda: tf.constant(pretrained_embeddings, name="word_embedding", dtype=tf.float32),
-        #                          lambda: tf.Variable(tf.random_uniform([vocab_size, embedding_size],
-        #                                                                -1.0, 1.0), name="word_embedding"))
 
         if load_embeds:
             self.Embedding = tf.constant(pretrained_embeddings, name="word_embedding", dtype=tf.float32)
@@ -27,10 +21,7 @@ class Word_Embedding():
 
     def __call__(self, embed, train_labels):
         with tf.name_scope("negative_sampling"):
-            # train_labels = train_labels[2]
-            # train_labels = tf.expand_dims(train_labels, -1)
 
-            # TODO - add custom sampler for loss based off of the word frequencies
             train_labels = tf.reshape(train_labels, [tf.shape(train_labels)[0], 1])
 
             if self.freqs:

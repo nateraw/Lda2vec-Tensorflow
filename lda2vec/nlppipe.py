@@ -7,6 +7,7 @@ from gensim.models.doc2vec import TaggedDocument
 from gensim.models import Doc2Vec
 import tensorflow as tf
 import os
+from sense2vec import Sense2VecComponent
 
 import sys
 import time
@@ -120,6 +121,7 @@ class NlpPipeline:
         self.keys = []
         for idx in range(3000000):
             word = self.model.index2word[idx]
+            # TODO - why is this lowercase?
             word = word.lower()
             self.keys.append(word)
             # Add the word to the nlp vocab
@@ -173,49 +175,23 @@ class NlpPipeline:
             self.sentence_tokenize()
             return
 
+        # If we want to merge phrases, we add s2v component
+        # to our pipe and it will do it for us.
+        if self.merge:
+            s2v = Sense2VecComponent('reddit_vectors-1.1.0')
+            self.nlp.add_pipe(s2v)
+
         for row, doc in enumerate(self.nlp.pipe(self.texts, n_threads=self.num_threads, batch_size=10000)):
             try:
-                if self.merge:
-                    # Make list to hold merged phrases. Necessary to avoid buggy spacy merge implementation
-                    phrase_list = []
-                    # Merge noun phrases into single tokens
-                    for phrase in list(doc.noun_chunks):
-                        while len(phrase) > 1 and phrase[0].dep_ not in self.bad_deps:
-                            phrase = phrase[1:]
-                        if len(phrase) > 1:
-                            phrase_list.append(phrase)
-
-                    # Merge phrases onto doc using doc.merge. Phrase.merge breaks.
-                    if len(phrase_list) > 0:
-                        for _phrase in phrase_list:
-                            doc.merge(start_idx=_phrase[0].idx,
-                                      end_idx=_phrase[len(_phrase) - 1].idx + len(_phrase[len(_phrase) - 1]),
-                                      tag=_phrase[0].tag_,
-                                      lemma='_'.join([token.text for token in _phrase]),
-                                      ent_type=_phrase[0].ent_type_)
-                    ent_list = []
-                    # Iterate over named entities
-                    for ent in doc.ents:
-                        if len(ent) > 1:
-                            ent_list.append(ent)
-
-                    # Merge entities onto doc using doc.merge. ent.merge breaks.
-                    if len(ent_list) > 0:
-                        for _ent in ent_list:
-                            doc.merge(start_idx=_ent[0].idx,
-                                      end_idx=_ent[len(_ent) - 1].idx + len(_ent[len(_ent) - 1]),
-                                      tag=_ent.root.tag_,
-                                      lemma='_'.join([token.text for token in _ent]),
-                                      ent_type=_ent[0].ent_type_)
-
                 # Create temp list for holding doc text
                 if self.save_tokenized_text_data:
                     doc_text = []
 
                 # Loop through tokens in doc
                 for token in doc:
+                    # TODO - determine if you want to leave spaces or replace with underscores
                     # Replaces spaces between phrases with underscore
-                    text = token.text.replace(" ", "_")
+                    # text = token.text.replace(" ", "_")
                     # Get the string token for the given token type
                     if self.token_type == "lower":
                         _token = token.lower_
@@ -263,8 +239,11 @@ class NlpPipeline:
                     length = min(len(dat), self.max_length)
                     self.data[row, :length] = dat[:length, 0].ravel()
             except Exception as e:
-                print("Warning! Document", row,
-                      "broke, likely due to spaCy merge issues.\nMore info at their github, issues #1547 and #1474")
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                print("\n\n")
+                print(exc_type, fname, exc_tb.tb_lineno)
+                # print("Warning! Document", row, "broke, likely due to spaCy merge issues.\nMore info at their github, issues #1547 and #1474")
                 self.purged_docs.append(row)
                 continue
 
@@ -403,6 +382,7 @@ class NlpPipeline:
                             # doc_data.append(sent_data.tolist())
 
                     except Exception as e:
+                        print(doc)
                         # exc_type, exc_obj, exc_tb = sys.exc_info()
                         # fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
                         # print(row, exc_type, e, exc_tb.tb_lineno)
