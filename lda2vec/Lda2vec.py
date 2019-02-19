@@ -1,5 +1,8 @@
-import tensorflow as tf, numpy as np, lda2vec.word_embedding as W, lda2vec.embedding_mixture as M, \
-    lda2vec.dirichlet_likelihood as DL
+import tensorflow as tf
+import numpy as np
+import lda2vec.word_embedding as W
+import lda2vec.embedding_mixture as M
+import lda2vec.dirichlet_likelihood as DL
 from datetime import datetime
 
 
