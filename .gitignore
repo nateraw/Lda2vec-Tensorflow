@@ -1,2 +1,3 @@
 lda2vec.egg-info/
 *__pycache__/
+dist/

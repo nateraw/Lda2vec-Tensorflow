@@ -2,7 +2,7 @@ from setuptools import find_packages
 from distutils.core import setup
 
 setup(name="lda2vec",
-	  version="0.13.00",
+	  version="0.14.00",
 	  description="Tools for interpreting natural language",
 	  author="Nathan Raw",
 	  author_email="nxr9266@rit.edu",
