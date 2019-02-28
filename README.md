@@ -3,9 +3,8 @@ Tensorflow 1.5 implementation of Chris Moody's Lda2vec, adapted from @meereeum
 
 ## Usage
 ### Installation
-Currently, the setup.py and the pip install are both not working!
-Unfortunately, I suggest you unpack the files yourself, for now.
-I am actively looking for help fixing that problem!
+`pip install lda2vec`
+
 ### Preprocessing
 
 The preprocessing is all done through the "nlppipe.py" file. Using SpaCy,
