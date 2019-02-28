@@ -19,7 +19,7 @@ P = Preprocessor(df, "texts", max_features=30000)
 P.preprocess()
 
 # Load embedding matrix from file path
-embedding_matrix = P.load_glove("/home/dlmachine/Documents/glove_embeddings/glove.6B.300d.txt")
+embedding_matrix = P.load_glove("glove_embeddings/glove.6B.300d.txt")
 
 # Save data to data_dir
 P.save_data(clean_data_dir, embedding_matrix=embedding_matrix)
