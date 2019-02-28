@@ -3,7 +3,7 @@ Tensorflow 1.5 implementation of Chris Moody's Lda2vec, adapted from @meereeum
 
 ## Usage
 ### Installation
-`pip install lda2vec`
+`python setup.py install` or `pip install lda2vec`
 
 ### Preprocessing
 
