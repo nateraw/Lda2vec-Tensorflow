@@ -1,7 +1,5 @@
 import numpy as np
 import pandas as pd
-from lda2vec.nlppipe import NlpPipeline
-from keras.preprocessing.sequence import skipgrams
 from sklearn.utils import shuffle
 import pickle
 import pyLDAvis
@@ -89,187 +87,74 @@ def prepare_topics(weights, factors, word_vectors, vocab, temperature=1.0,
     return data
 
 
-def run_preprocessing(texts, data_dir, run_name, min_freq_threshold=10,
-                      max_length=100, bad=[], vectors="en_core_web_lg",
-                      num_threads=2, token_type="lemma", only_keep_alpha=False,
-                      write_every=10000, merge=False):
-    """This function abstracts the rest of the preprocessing needed
-    to run Lda2Vec in conjunction with the NlpPipeline
-
+def load_preprocessed_data(data_path, load_embed_matrix=False, shuffle_data=True):
+    """Load in all data that was processed via the preprocessing files included
+    in this library. Optionally load embedding matrix, if you preprocessed and saved one
+    in the data_path. 
+    
     Parameters
     ----------
-    texts : TYPE
-        Python list of text
-    data_dir : TYPE
-        directory where your data is held
-    run_name : TYPE
-        Name of sub-directory to be created that will hold preprocessed data
-    min_freq_threshold : int, optional
-        If words occur less frequently than this threshold, then purge them from the docs
-    max_length : int, optional
-        Length to pad/cut off sequences
-    bad : list, optional
-        List or Set of words to filter out of dataset
-    vectors : str, optional
-        Name of vectors to load from spacy (Ex. "en", "en_core_web_sm")
-    num_threads : int, optional
-        Number of threads used in spacy pipeline
-    token_type : str, optional
-        Type of tokens to keep (Options: "lemma", "lower", "orth")
-    only_keep_alpha : bool, optional
-        Only keep alpha characters
-    write_every : int, optional
-        Number of documents' data to store before writing cache to skipgrams file
-    merge : bool, optional
-        Merge noun phrases or not
+    data_path : TYPE
+        Path where all your data is stored. Should be same path you passed the preprocessor when you called save_data()
+    load_embed_matrix : bool, optional
+        If True, load embedding_matrix.npy file found in data_path.
+    shuffle : bool, optional
+        If True, it will shuffle the skipgrams dataframe when we load it in. Otherwise, it will leave it in order.
+    
+    Returns
+    -------
+    TYPE
+        Description
     """
-
-    def clean(line):
-        return ' '.join(w for w in line.split() if not any(t in w for t in bad))
-
-    # Location for preprocessed data to be stored
-    file_out_path = data_dir + "/" + run_name
-
-    if not os.path.exists(file_out_path):
-
-        # Make directory to save data in
-        os.makedirs(file_out_path)
-
-        # Remove tokens with these substrings
-        bad = set(bad)
-
-        # Preprocess data
-
-        # Convert to unicode (spaCy only works with unicode)
-        texts = [str(clean(d)) for d in texts]
-
-        # Process the text, no file because we are passing in data directly
-        SP = NlpPipeline(None, max_length, texts=texts,
-                         num_threads=num_threads, only_keep_alpha=only_keep_alpha,
-                         token_type=token_type, vectors=vectors, merge=merge)
-
-        # Computes the embed matrix along with other variables
-        SP._compute_embed_matrix()
-
-        print("converting data to w2v indexes")
-        # Convert data to word2vec indexes
-        SP.convert_data_to_word2vec_indexes()
-
-        print("trimming 0's")
-        # Trim zeros from idx data
-        SP.trim_zeros_from_idx_data()
-
-        # This extracts the length of each document (needed for pyldaviz)
-        doc_lengths = [len(x) for x in SP.idx_data]
-
-        # Find the cutoff idx
-        for i, freq in enumerate(SP.freqs):
-            if freq < min_freq_threshold:
-                cutoff = i
-                break
-        # Then, cut off the embed matrix
-        embed_matrix = SP.embed_matrix[:cutoff]
-        # Also, replace all tokens below cutoff in idx_data
-        for i in range(len(SP.idx_data)):
-            SP.idx_data[i][SP.idx_data[i] > cutoff - 1] = 0
-        # Next, cut off the frequencies
-        freqs = SP.freqs[:cutoff]
-
-        print("converting to skipgrams")
-
-        data = []
-        num_examples = SP.idx_data.shape[0]
-        # Sometimes docs can be less than the required amount for
-        # the skipgram function. So, we must manually make a counter
-        # instead of relying on the enumerated index (i)
-        doc_id_counter = 0
-        # Additionally, we will keep track of these lower level docs
-        # and will purge them later
-        purged_docs = []
-        for i, t in enumerate(SP.idx_data):
-            pairs, _ = skipgrams(t,
-                                 vocabulary_size=SP.vocab_size,
-                                 window_size=5,
-                                 shuffle=True,
-                                 negative_samples=0)
-            # Pairs will be 0 if document is less than 2 indexes
-            if len(pairs) > 2:
-                for pair in pairs:
-                    temp_data = pair
-                    # Appends doc ID
-                    temp_data.append(doc_id_counter)
-                    # Appends document index
-                    temp_data.append(i)
-                    data.append(temp_data)
-                doc_id_counter += 1
-            else:
-                purged_docs.append(i)
-            if i // write_every:
-                temp_df = pd.DataFrame(data)
-                temp_df.to_csv(file_out_path + "/skipgrams.txt", sep="\t", index=False, header=None, mode="a")
-                del temp_df
-                data = []
-            if i % 500 == 0:
-                print("step", i, "of", num_examples)
-        temp_df = pd.DataFrame(data)
-        temp_df.to_csv(file_out_path + "/skipgrams.txt", sep="\t", index=False, header=None, mode="a")
-        del temp_df
-
-        # Save embed matrix
-        np.save(file_out_path + "/embed_matrix", embed_matrix)
-        # Save the doc lengths to be used later, also, purge those that didnt make it into skipgram function
-        np.save(file_out_path + "/doc_lengths", np.delete(doc_lengths, np.array(purged_docs)))
-        # Save frequencies to file
-        np.save(file_out_path + "/freqs", freqs)
-        # Save vocabulary dictionaries to file
-        idx_to_word_out = open(file_out_path + "/" + "idx_to_word.pickle", "wb")
-        pickle.dump(SP.idx_to_word, idx_to_word_out)
-        idx_to_word_out.close()
-        word_to_idx_out = open(file_out_path + "/" + "word_to_idx.pickle", "wb")
-        pickle.dump(SP.word_to_idx, word_to_idx_out)
-        word_to_idx_out.close()
-
-
-def load_preprocessed_data(data_path, run_name):
-    # Set file out path
-    file_out_path = data_path + "/" + run_name
-
     # Reload all data
-    i2w_in = open(file_out_path + "/" + "idx_to_word.pickle", "rb")
+    i2w_in = open(data_path + "/" + "idx_to_word.pickle", "rb")
     idx_to_word = pickle.load(i2w_in)
 
-    w2i_in = open(file_out_path + "/" + "word_to_idx.pickle", "rb")
+    w2i_in = open(data_path + "/" + "word_to_idx.pickle", "rb")
     word_to_idx = pickle.load(w2i_in)
 
-    freqs = np.load(file_out_path + "/" + "freqs.npy")
+    freqs = np.load(data_path + "/" + "freqs.npy")
     freqs = freqs.tolist()
 
-    embed_matrix = np.load(file_out_path + "/" + "embed_matrix.npy")
+    if load_embed_matrix:
+        embed_matrix = np.load(data_path + "/" + "embedding_matrix.npy")
 
-    df = pd.read_csv(file_out_path + "/skipgrams.txt", sep="\t", header=None)
+    df = pd.read_csv(data_path + "/skipgrams.txt", sep="\t", header=None)
 
     # Extract data arrays from dataframe
     pivot_ids = df[0].values
     target_ids = df[1].values
     doc_ids = df[2].values
 
-    # Shuffle the data
-    pivot_ids, target_ids, doc_ids = shuffle(pivot_ids, target_ids, doc_ids, random_state=0)
-
-    # Hyperparameters
-    num_docs = doc_ids.max() + 1
-    vocab_size = len(freqs)
-    embed_size = embed_matrix.shape[1]
-
-    return (idx_to_word, word_to_idx, freqs, embed_matrix, pivot_ids,
-            target_ids, doc_ids, num_docs, vocab_size, embed_size)
+    if shuffle_data:
+        # Shuffle the data
+        pivot_ids, target_ids, doc_ids = shuffle(pivot_ids, target_ids, doc_ids, random_state=0)
 
 
-def generate_ldavis_data(data_path, run_name, model,
-                         idx_to_word, freqs, vocab_size):
+    if load_embed_matrix:
+        return (idx_to_word, word_to_idx, freqs, pivot_ids, target_ids, doc_ids, embed_matrix)
+    else:
+        return (idx_to_word, word_to_idx, freqs, pivot_ids, target_ids, doc_ids)
+
+
+def generate_ldavis_data(data_path, model, idx_to_word, freqs, vocab_size):
     """This method will launch a locally hosted session of
     pyLDAvis that will visualize the results of our model
+    
+    Parameters
+    ----------
+    data_path : str
+        Location where your data is stored.
+    model : Lda2Vec
+        Loaded lda2vec tensorflow model. 
+    idx_to_word : dict
+        index to word mapping dictionary
+    freqs list: 
+        Frequencies of each token.
+    vocab_size : int
+        Total size of your vocabulary
     """
+
     doc_embed = model.sesh.run(model.doc_embedding)
     topic_embed = model.sesh.run(model.topic_embedding)
     word_embed = model.sesh.run(model.word_embedding)
@@ -280,7 +165,7 @@ def generate_ldavis_data(data_path, run_name, model,
         vocabulary.append(idx_to_word[i])
 
     # Read in document lengths
-    doc_lengths = np.load(data_path + "/" + run_name + "/" + "doc_lengths.npy")
+    doc_lengths = np.load(data_path + "/doc_lengths.npy")
 
     # The prepare_topics function is a direct copy from Chris Moody
     vis_data = prepare_topics(doc_embed, topic_embed, word_embed, np.array(vocabulary), doc_lengths=doc_lengths,

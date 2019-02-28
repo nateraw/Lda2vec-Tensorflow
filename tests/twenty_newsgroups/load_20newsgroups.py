@@ -1,21 +1,25 @@
 import pandas as pd
-from lda2vec import utils
+import numpy as np
+from lda2vec.nlppipe import Preprocessor
 
 # Data directory
 data_dir ="data"
-# Subdirectory of data_dir to store preprocessed data
-run_name = "my_run"
+# Where to save preprocessed data
+clean_data_dir = "data/clean_data"
 # Name of input file. Should be inside of data_dir
 input_file = "20_newsgroups.txt"
 
 # Read in data file
 df = pd.read_csv(data_dir+"/"+input_file, sep="\t")
 
-# Extract Texts
-texts = df.texts.values.tolist()
+# Initialize a preprocessor
+P = Preprocessor(df, "texts", max_features=30000)
 
-# Add in words to filter out
-bad = set(["ax>", '`@("', '---', '===', '^^^', "AX>", "GIZ"])
+# Run the preprocessing on your dataframe
+P.preprocess()
 
-# Run the preprocessing. Preprocessed data will be found under "data_dir/run_name/"
-utils.run_preprocessing(texts, data_dir, run_name, bad=bad, max_length=10000)
+# Load embedding matrix from file path
+embedding_matrix = P.load_glove("/home/dlmachine/Documents/glove_embeddings/glove.6B.300d.txt")
+
+# Save data to data_dir
+P.save_data(clean_data_dir, embedding_matrix=embedding_matrix)
