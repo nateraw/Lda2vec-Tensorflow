@@ -78,7 +78,7 @@ class Preprocessor:
         self.idx_data = self.tokenizer.texts_to_sequences(self.texts_clean)
 
         # Limit the data to be maxlen
-        for i, d in enumerate(self.idx_data)
+        for i, d in enumerate(self.idx_data):
             self.idx_data[i] = d[:self.maxlen]
 
     def get_supplemental_data(self):
