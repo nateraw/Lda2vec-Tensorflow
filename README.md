@@ -1,15 +1,20 @@
 # Lda2vec-Tensorflow
 Tensorflow 1.5 implementation of Chris Moody's Lda2vec, adapted from @meereeum
 
+## Note
+This algorithm is very much so a research algorithm. It doesn't always work so well, and you have to train it for a long time. As the author noted in the paper, most of the time normal LDA will work better.
+
+Note that you should run this algorithm for **at least 20 epochs** before expecting to see any results. The algorithm is meant to run for a very long time. 
+
 ## Usage
 ### Installation
-`python setup.py install` or `pip install lda2vec`
+Clone the repo and run `python setup.py install` to install the package as is or run `python setup.py develop` to make your own edits. 
+
+You can also just `pip install lda2vec` (Last updated 2/28/19)
 
 ### Preprocessing
 
-The preprocessing is all done through the "nlppipe.py" file. Using SpaCy,
-we have added a lot of functionality. We can pad/cut off our sentences,
-merge noun phrases, use parallel processing, and load pretrained vectors.
+The preprocessing is all done through the "nlppipe.py" file using Spacy. Feel free to use your own preprocessing, if you like.
 
 At the most basic level, if you would like to get your data processed for lda2vec,
 you can do the following:
@@ -23,13 +28,22 @@ clean_data_dir = "data/clean_data"
 input_file = "20_newsgroups.txt"
 # Should we load glove vectors from file?
 load_glove_vecs = False
-
+# Spacy model to use
+nlp = "en_core_web_lg" # "en", "en_core_web_sm", or any other Spacy Language model you have
+# Number of tokens to cut documents off at
+maxlen = 100
+# Maximum number of words to keep in your vocabulary
+max_features = 30000
 
 # Read in data file
 df = pd.read_csv(data_dir+"/"+input_file, sep="\t")
 
 # Initialize a preprocessor
-P = Preprocessor(df, "texts", max_features=30000)
+P = Preprocessor(df, # Data loaded into dataframe. Each row has a document.
+                "texts", # Name of text column in your dataframe
+                max_features=max_features,
+                maxlen=maxlen,
+                nlp=nlp)
 
 # Run the preprocessing on your dataframe
 P.preprocess()
@@ -42,7 +56,7 @@ else:
     P.save_data(clean_data_dir)
 ```
 
-When you run the twenty newsgroups example, it will create a directory tree that looks like this:
+When you run the twenty newsgroups preprocessing example, it will create a directory tree that looks like this:
 ```bash
 ├── my_project
 │   ├── data
@@ -82,16 +96,22 @@ num_docs = doc_ids.max() + 1
 vocab_size = len(freqs)
 embed_size = 128 # If you loaded the embed matrix, use embed_matrix.shape[1]
 
-
-m = model(num_docs,
-          vocab_size,
-          num_topics=num_topics,
-          embedding_size=embed_size,
+# Initialize the model
+m = model(num_docs, # Number of documents in your corpus
+          vocab_size, # Number of unique words in your vocabulary
+          num_topics=num_topics, # Number of topics to learn
+          embedding_size=embed_size, # Embedding dimension size
           load_embeds=False, # True if embed_matrix loaded
-          pretrained_embeddings=None, # embed_matrix if you loaded it
-          freqs=freqs)
+          pretrained_embeddings=None, # numpy.ndarray embed_matrix if you loaded it
+          freqs=freqs) # Python list of shape (vocab_size,). Frequencies of each token, same order as embed matrix mappings.
 
-m.train(pivot_ids,target_ids,doc_ids, len(pivot_ids), num_epochs, idx_to_word=idx_to_word,  switch_loss_epoch=5)```
+# Train the model
+m.train(pivot_ids,target_ids,
+        doc_ids,
+        len(pivot_ids),
+        num_epochs,
+        switch_loss_epoch = 5
+        idx_to_word=idx_to_word)
 ```
 
 ### Visualizing the Results
