@@ -4,7 +4,7 @@ Tensorflow 1.5 implementation of Chris Moody's Lda2vec, adapted from @meereeum
 ## Note
 This algorithm is very much so a research algorithm. It doesn't always work so well, and you have to train it for a long time. As the author noted in the paper, most of the time normal LDA will work better.
 
-Note that you should run this algorithm for **at least 20 epochs** before expecting to see any results. The algorithm is meant to run for a very long time. 
+Note that you should run this algorithm for **at least 100 epochs** before expecting to see any results. The algorithm is meant to run for a very long time. 
 
 ## Usage
 ### Installation
