@@ -10,6 +10,8 @@ Note that you should run this algorithm for **at least 100 epochs** before expec
 
 ## Usage
 ### Installation
+**Warning**- You may have to install dependencies manually before being able to use the package. Requirements can be found [here](https://github.com/nateraw/Lda2vec-Tensorflow/issues/27). If you install these on a clean environment, you should be good to go. I am seeking help on this issue.
+
 Clone the repo and run `python setup.py install` to install the package as is or run `python setup.py develop` to make your own edits. 
 
 You can also just `pip install lda2vec` (Last updated 2/28/19)
