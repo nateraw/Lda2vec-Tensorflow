@@ -27,4 +27,4 @@ m = model(num_docs,
 
 m.train(pivot_ids,target_ids,doc_ids, len(pivot_ids), num_epochs, idx_to_word=idx_to_word,  switch_loss_epoch=5)
 
-utils.generate_ldavis_data(data_path, run_name, m, idx_to_word, freqs, vocab_size)
+utils.generate_ldavis_data(data_path, m, idx_to_word, freqs, vocab_size)
