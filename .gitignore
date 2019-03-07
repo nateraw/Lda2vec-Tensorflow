@@ -1,3 +1,6 @@
 lda2vec.egg-info/
 *__pycache__/
 dist/
+
+tests/twenty_newsgroups/logdir*
+tests/twenty_newsgroups/data*

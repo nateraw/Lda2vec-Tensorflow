@@ -1,4 +1,5 @@
-import numpy as np, tensorflow as tf
+import numpy as np
+import tensorflow as tf
 
 
 def _orthogonal_matrix(shape):
@@ -20,10 +21,10 @@ class EmbedMixture:
         self.name = name
         scalar = 1 / np.sqrt(n_documents + n_topics)
         if not isinstance(W_in, np.ndarray):
-            self.Doc_Embedding = tf.Variable(tf.random_normal([n_documents, n_topics], mean=0, stddev=50 * scalar), name=self.name + '_' + 'doc_embedding')
+            self.doc_embedding = tf.Variable(tf.random_normal([n_documents, n_topics], mean=0, stddev=50 * scalar), name=self.name + '_' + 'doc_embedding')
         else:
             init = tf.constant(W_in)
-            self.Doc_Embedding = tf.get_variable(self.name + '_' + 'doc_embedding', initializer=init)
+            self.doc_embedding = tf.get_variable(self.name + '_' + 'doc_embedding', initializer=init)
         with tf.name_scope(self.name + '_' + 'Topics'):
             if not isinstance(factors_in, np.ndarray):
                 self.topic_embedding = tf.get_variable(self.name + '_' + 'topic_embedding', shape=[n_topics, n_dim], dtype=tf.float32, initializer=tf.orthogonal_initializer(gain=scalar))
@@ -38,9 +39,9 @@ class EmbedMixture:
 
     def proportions(self, doc_ids=None, softmax=False):
         if doc_ids == None:
-            w = self.Doc_Embedding
+            w = self.doc_embedding
         else:
-            w = tf.nn.embedding_lookup(self.Doc_Embedding, doc_ids, name=self.name + '_' + 'doc_proportions')
+            w = tf.nn.embedding_lookup(self.doc_embedding, doc_ids, name=self.name + '_' + 'doc_proportions')
         if softmax:
             return tf.nn.softmax(w / self.temperature)
         else:

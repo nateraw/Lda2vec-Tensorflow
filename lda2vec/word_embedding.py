@@ -3,17 +3,15 @@ import tensorflow as tf
 
 class Word_Embedding():
     def __init__(self, embedding_size, vocab_size, sample_size, power=1.,
-                 freqs=None, load_embeds=False, pretrained_embeddings=None):
+                 freqs=None, W_in=None):
         self.vocab_size = vocab_size
         self.sample_size = sample_size
         self.power = power
         self.freqs = freqs
 
-        if load_embeds:
-            self.Embedding = tf.constant(pretrained_embeddings, name="word_embedding", dtype=tf.float32)
-        else:
-            self.Embedding = tf.Variable(tf.random_uniform([vocab_size, embedding_size],
-                                                           -1.0, 1.0), name="word_embedding")
+        self.embedding = tf.Variable(tf.random_uniform([vocab_size, embedding_size],-1.0, 1.0),
+                           name="word_embedding") if W_in is None else W_in
+
         # Construct nce loss for word embeddings
         self.nce_weights = tf.Variable(tf.truncated_normal([vocab_size, embedding_size],
                                                            stddev=tf.sqrt(1 / embedding_size)), name="nce_weights")

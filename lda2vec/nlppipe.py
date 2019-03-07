@@ -9,13 +9,13 @@ import os
 
 class Preprocessor:
     def __init__(self, df, textcol, max_features=30000, maxlen=100, window_size=5, nlp="en_core_web_sm",
-                 bad=set(["ax>", '`@("', '---', '===', '^^^', "AX>", "GIZ"]), token_type="lower"):
+                 bad=set(["ax>", '`@("', '---', '===', '^^^', "AX>", "GIZ"]), token_type="lower", min_count=None):
         """Summary
         
         Args:
             df (TYPE): Dataframe that has your text in a column
             textcol (TYPE): Name of the column in your dataframe that holds the text
-                max_features (int, optional): Maximum number of unique words to keep
+            max_features (int, optional): Maximum number of unique words to keep
             maxlen (int, optional): Maximum length of a document. Will cut off documents
                 at this length after tokenization but before computing skipgram pairs.
             window_size (int, optional): size of sampling windows (technically half-window). 
@@ -25,6 +25,8 @@ class Preprocessor:
             bad (TYPE, optional): Set of known bad characters for your dataset that you'd like to remove.
             token_type (str, optional): Type of token to keep. Options are "lower", "lemma". If you pass something
                 that isn't in these options, you will get the original text back (i.e. not lowercased or anything)
+            min_count (int, optional): Will remove words below this frequency if an integer is given. Defaults to not
+                deleting anything
         """
         self.df = df
         self.textcol = textcol
@@ -33,6 +35,7 @@ class Preprocessor:
         self.maxlen = maxlen
         self.max_features = max_features
         self.window_size = window_size
+        self.min_count = min_count
 
         # Here we disable parts of spacy's pipeline - REALLY improves speed.
         self.nlp = spacy.load(nlp, disable = ['ner', 'tagger', 'parser'])
@@ -74,6 +77,17 @@ class Preprocessor:
         self.tokenizer = Tokenizer(self.max_features, filters="", lower=False)
         self.tokenizer.fit_on_texts(self.texts_clean)
 
+        # This chunk handles removing words with counts less than min_count
+        if self.min_count != None:
+            # Get all the words to remove
+            words_to_rm = [w for w,c in self.tokenizer.word_counts.items() if c < self.min_count]
+            print("Removing {0} low frequency tokens out of {1} total tokens".format(len(words_to_rm), len(self.tokenizer.word_counts)))
+            # Iterate over those words and remove them from the necessary Tokenizer attributes
+            for w in words_to_rm:
+                del self.tokenizer.word_index[w]
+                del self.tokenizer.word_docs[w]
+                del self.tokenizer.word_counts[w]
+
         # Get the idx data from the tokenizer
         self.idx_data = self.tokenizer.texts_to_sequences(self.texts_clean)
 
@@ -82,9 +96,6 @@ class Preprocessor:
             self.idx_data[i] = d[:self.maxlen]
 
     def get_supplemental_data(self):
-
-        # Get lengths of each doc
-        self.doc_lengths = [len(x) for x in self.idx_data]
 
         # Get idx to word from keras tokenizer
         self.word_to_idx = self.tokenizer.word_index
@@ -169,9 +180,11 @@ class Preprocessor:
         3 - Original Doc ID - Doc ID without considering purged docs. 
         """
         # List to hold skipgrams and associated metadata
-        skipgram_data = []
+        skipgram_data    = []
         # List of indexes (of original texts list from dataframe) where we are throwing the doc out due to short length
         self.purged_docs = []
+        # List holding the number of tokens in each document
+        self.doc_lengths = []
         # ID to count document IDS
         doc_id_counter = 0
         print("\n---------- Getting Skipgrams ----------")
@@ -181,7 +194,7 @@ class Preprocessor:
                                  window_size = self.window_size,
                                  shuffle=True,
                                  negative_samples=0)
-
+            
             if len(pairs) > 2:
                 for pair in pairs:
                     temp_data = pair
@@ -190,10 +203,12 @@ class Preprocessor:
                     # Appends document index (index of original texts list from dataframe)
                     temp_data.append(i)
                     skipgram_data.append(temp_data)
+                self.doc_lengths.append(len(t))
                 doc_id_counter+=1
             else:
                 # We purge docs with less than 2 pairs
                 self.purged_docs.append(i)
+
         self.skipgrams_df = pd.DataFrame(skipgram_data)
 
     def preprocess(self):

@@ -13,7 +13,7 @@ input_file = "20_newsgroups.txt"
 df = pd.read_csv(data_dir+"/"+input_file, sep="\t")
 
 # Initialize a preprocessor
-P = Preprocessor(df, "texts", max_features=30000)
+P = Preprocessor(df, "texts", max_features=30000, min_count=30)
 
 # Run the preprocessing on your dataframe
 P.preprocess()
@@ -21,5 +21,5 @@ P.preprocess()
 # Load embedding matrix from file path
 embedding_matrix = P.load_glove("glove_embeddings/glove.6B.300d.txt")
 
-# Save data to data_dir
+# # # Save data to data_dir
 P.save_data(clean_data_dir, embedding_matrix=embedding_matrix)

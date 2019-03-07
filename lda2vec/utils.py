@@ -4,7 +4,7 @@ from sklearn.utils import shuffle
 import pickle
 import pyLDAvis
 import os
-
+import random
 
 def _softmax(x):
     e_x = np.exp(x - np.max(x))
@@ -107,11 +107,11 @@ def load_preprocessed_data(data_path, load_embed_matrix=False, shuffle_data=True
         Description
     """
     # Reload all data
-    i2w_in = open(data_path + "/" + "idx_to_word.pickle", "rb")
-    idx_to_word = pickle.load(i2w_in)
+    with open(data_path + "/" + "idx_to_word.pickle", "rb") as i2w_in:
+        idx_to_word = pickle.load(i2w_in)
 
-    w2i_in = open(data_path + "/" + "word_to_idx.pickle", "rb")
-    word_to_idx = pickle.load(w2i_in)
+    with open(data_path + "/" + "word_to_idx.pickle", "rb") as w2i_in:
+        word_to_idx = pickle.load(w2i_in)
 
     freqs = np.load(data_path + "/" + "freqs.npy")
     freqs = freqs.tolist()
@@ -155,14 +155,14 @@ def generate_ldavis_data(data_path, model, idx_to_word, freqs, vocab_size):
         Total size of your vocabulary
     """
 
-    doc_embed = model.sesh.run(model.doc_embedding)
-    topic_embed = model.sesh.run(model.topic_embedding)
-    word_embed = model.sesh.run(model.word_embedding)
+    doc_embed = model.sesh.run(model.mixture.doc_embedding)
+    topic_embed = model.sesh.run(model.mixture.topic_embedding)
+    word_embed = model.sesh.run(model.w_embed.embedding)
 
     # Extract all unique words in order of index 0-vocab_size
     vocabulary = []
-    for i in range(vocab_size):
-        vocabulary.append(idx_to_word[i])
+    for k,v in idx_to_word.items():
+        vocabulary.append(v)
 
     # Read in document lengths
     doc_lengths = np.load(data_path + "/doc_lengths.npy")
@@ -173,3 +173,13 @@ def generate_ldavis_data(data_path, model, idx_to_word, freqs, vocab_size):
 
     prepared_vis_data = pyLDAvis.prepare(**vis_data)
     pyLDAvis.show(prepared_vis_data)
+
+def chunks(n, *args):
+    """Yield successive n-sized chunks from l."""
+    # From stackoverflow question 312443
+    keypoints = []
+    for i in range(0, len(args[0]), n):
+        keypoints.append((i, i + n))
+    random.shuffle(keypoints)
+    for a, b in keypoints:
+        yield [arg[a: b] for arg in args]

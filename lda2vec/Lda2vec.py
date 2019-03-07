@@ -3,25 +3,25 @@ import numpy as np
 import lda2vec.word_embedding as W
 import lda2vec.embedding_mixture as M
 import lda2vec.dirichlet_likelihood as DL
+from lda2vec import utils
 from datetime import datetime
-
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 class Lda2vec:
     RESTORE_KEY = 'to_restore'
 
-    def __init__(self, num_unique_documents, vocab_size, num_topics, freqs=None, load_embeds=False,
-                 pretrained_embeddings=False, save_graph_def=True, embedding_size=128, num_sampled=40,
+    def __init__(self, num_unique_documents, vocab_size, num_topics, freqs=None, 
+                 save_graph_def=True, embedding_size=128, num_sampled=40,
                  learning_rate=0.001, lmbda=200.0, alpha=None, power=0.75, batch_size=500, logdir='logdir',
-                 restore=False, W_in=None, factors_in=None, additional_features_info=[], additional_features_names=[]):
+                 restore=False, fixed_words=False, factors_in=None, w_in=None):
         """Summary
-
+        
         Args:
             num_unique_documents (int): Number of unique documents in your dataset
             vocab_size (int): Number of unique words/tokens in your dataset
             num_topics (int): The set number of topics to cluster your data into
             freqs (list, optional): Python list of length vocab_size with frequencies of each token
-            load_embeds (bool, optional): If true, we will load embeddings from pretrained_embeddings variable
-            pretrained_embeddings (np array, optional): Pretrained embeddings - shape should be (vocab_size, embedding_size)
             save_graph_def (bool, optional): If true, we will save the graph to logdir
             embedding_size (int, optional): Dimension of the embeddings. This will be shared between docs, words, and topics.
             num_sampled (int, optional): Negative sampling number for NCE Loss.
@@ -32,27 +32,19 @@ class Lda2vec:
             batch_size (int, optional): Batch size coming into model
             logdir (str, optional): Location for models to be saved - note, we will append on the datetime too on each run
             restore (bool, optional): When True, we will restore the model from the logdir parameter's location
-            W_in (None, optional): Pretrained Doc Embedding weights (shape should be [num_unique_documents, embedding_size])
+            fixed_words (bool, optional): Description
             factors_in (None, optional): Pretrained Topic Embedding (shape should be [num_topics, embedding_size])
-            additional_features_info (list, optional): Pass this a list of the number of unique elements
-                                                       relating the the feature passed
-            additional_features_names (list, optional): A list of strings of the same length of additional_features_info
-                                                       that names the corresponding additional features
-
+            w_in (None, optional): Description
+        
         """
         self.config = tf.ConfigProto()
         self.config.gpu_options.allow_growth = True
         self.sesh = tf.Session(config=self.config)
         self.moving_avgs = tf.train.ExponentialMovingAverage(0.9)
         self.num_unique_documents = num_unique_documents
-        self.additional_features_info = additional_features_info
-        self.num_additional_features = len(self.additional_features_info)
-        self.additional_features_names = additional_features_names
         self.vocab_size = vocab_size
         self.num_topics = num_topics
         self.freqs = freqs
-        self.load_embeds = load_embeds
-        self.pretrained_embeddings = pretrained_embeddings
         self.save_graph_def = save_graph_def
         self.logdir = logdir
         self.embedding_size = embedding_size
@@ -62,57 +54,47 @@ class Lda2vec:
         self.alpha = alpha
         self.power = power
         self.batch_size = batch_size
-        self.W_in = W_in
+        self.w_in = w_in
         self.factors_in = factors_in
         self.compute_normed = False
+        self.fixed_words = fixed_words
+
+
         if not restore:
             self.date = datetime.now().strftime('%y%m%d_%H%M')
             self.logdir = ('{}_{}').format(self.logdir, self.date)
+
+            if type(w_in) !=None:
+                W_in = tf.constant(w_in, name="word_embedding") if fixed_words else tf.get_variable("word_embedding", shape=[self.vocab_size,self.embedding_size], initializer=tf.constant_initializer(w_in))
+
+
             self.w_embed = W.Word_Embedding(self.embedding_size, self.vocab_size, self.num_sampled,
-                                            load_embeds=self.load_embeds,
-                                            pretrained_embeddings=self.pretrained_embeddings, freqs=self.freqs,
+                                            W_in=W_in, freqs=self.freqs,
                                             power=self.power)
-            self.mixture_doc = M.EmbedMixture(self.num_unique_documents, self.num_topics, self.embedding_size,
+            self.mixture = M.EmbedMixture(self.num_unique_documents, self.num_topics, self.embedding_size,
                                               name='doc')
-            self.additional_features_list = []
-            for feature in range(self.num_additional_features):
-                self.additional_features_list.append(
-                    M.EmbedMixture(self.additional_features_info[feature], self.num_topics, self.embedding_size,
-                                   name=self.additional_features_names[feature]))
+
 
             handles = self._build_graph()
             for handle in handles:
                 tf.add_to_collection(Lda2vec.RESTORE_KEY, handle)
 
-            self.x, self.y, self.docs, self.additional_features, self.step, self.switch_loss, self.pivot, self.doc, self.context, self.loss_word2vec, self.fraction, self.loss_lda, self.loss, self.loss_avgs_op, self.optimizer, self.doc_embedding, self.topic_embedding, self.word_embedding, self.nce_weights, self.nce_biases, self.merged, *kg = handles
-            if len(kg) > 0:
-                self.additional_features_list = kg[:len(kg) // 2]
-                self.feature_lookup = kg[len(kg) // 2:]
+            (self.x, self.y, self.docs, self.step, self.switch_loss, self.word_context, self.doc_context,
+            self.loss_word2vec, self.fraction, self.loss_lda, self.loss, self.loss_avgs_op, self.optimizer, self.merged) = handles
+
         else:
             meta_graph = logdir + '/model.ckpt'
             tf.train.import_meta_graph(meta_graph + '.meta').restore(self.sesh, meta_graph)
             handles = self.sesh.graph.get_collection(Lda2vec.RESTORE_KEY)
-            self.x, self.y, self.docs, self.additional_features, self.step, self.switch_loss, self.pivot, self.doc, self.context, self.loss_word2vec, self.fraction, self.loss_lda, self.loss, self.loss_avgs_op, self.optimizer, self.doc_embedding, self.topic_embedding, self.word_embedding, self.nce_weights, self.nce_biases, self.merged, *kg = handles
-            if len(kg) > 0:
-                self.additional_features_list = kg[:len(kg) // 2]
-                self.feature_lookup = kg[len(kg) // 2:]
+
+            (self.x, self.y, self.docs, self.step, self.switch_loss, self.word_context, self.doc_context,
+            self.loss_word2vec, self.fraction, self.loss_lda, self.loss, self.loss_avgs_op, self.optimizer, self.merged) = handles
+
 
     def prior(self, docs):
-        doc_prior = DL.dirichlet_likelihood(self.mixture_doc.Doc_Embedding, alpha=self.alpha)
-        feature_prior_created = False
-        for i in range(self.num_additional_features):
-            temp_feature_prior = DL.dirichlet_likelihood(self.additional_features_list[i].Doc_Embedding,
-                                                         alpha=self.alpha)
-            if feature_prior_created:
-                feature_prior += temp_feature_prior
-            else:
-                feature_prior_created = True
-                feature_prior = temp_feature_prior
+        doc_prior = DL.dirichlet_likelihood(self.mixture.doc_embedding, alpha=self.alpha)
 
-        if feature_prior_created:
-            return doc_prior + feature_prior
-        else:
-            return doc_prior
+        return doc_prior
 
     def _build_graph(self):
         """
@@ -122,51 +104,63 @@ class Lda2vec:
         y = context words (int)
         docs = docs at pivot (int)
         """
-        x = tf.placeholder(tf.int32, shape=[None], name='x_pivot_idxs')
-        y = tf.placeholder(tf.int64, shape=[None], name='y_target_idxs')
-        docs = tf.placeholder(tf.int32, shape=[None], name='doc_ids')
-        additional_features = tf.placeholder(tf.int32, shape=[self.num_additional_features, None])
-        step = tf.Variable(0, trainable=False, name='global_step')
-        switch_loss = tf.Variable(0, trainable=False)
-        word_context = tf.nn.embedding_lookup(self.w_embed.Embedding, x, name='word_embed_lookup')
-        doc_context = self.mixture_doc(doc_ids=docs)
-        feature_lookup = []
-        for i in range(self.num_additional_features):
-            feature_lookup.append(self.additional_features_list[i](doc_ids=additional_features[i]))
 
-        contexts_to_add = feature_lookup
-        contexts_to_add.append(word_context)
-        contexts_to_add.append(doc_context)
+        # Model Inputs
+        # Pivot Words
+        x = tf.placeholder(tf.int32, shape=[None], name='x_pivot_idxs')
+        # Context/Target Words
+        y = tf.placeholder(tf.int64, shape=[None], name='y_target_idxs')
+        # Document ID
+        docs = tf.placeholder(tf.int32, shape=[None], name='doc_ids')
+
+        # Global Step
+        step = tf.Variable(0, trainable=False, name='global_step')
+        # What epoch should we switch on lda loss?
+        switch_loss = tf.Variable(0, trainable=False)
+        # Word embedding lookup
+        word_context = tf.nn.embedding_lookup(self.w_embed.embedding, x, name='word_embed_lookup')
+        # Document Context via document ID lookup
+        doc_context = self.mixture(doc_ids=docs)
+
+        # Compile word + doc context in list and add them together
+        contexts_to_add=[word_context, doc_context]
         context = tf.add_n(contexts_to_add, name='context_vector')
+
+        # Compute Word2Vec Loss
         with tf.name_scope('nce_loss'):
             loss_word2vec = self.w_embed(context, y)
             tf.summary.scalar('nce_loss', loss_word2vec)
+        # Compute LDA Loss
         with tf.name_scope('lda_loss'):
             fraction = tf.Variable(1, trainable=False, dtype=tf.float32, name='fraction')
             loss_lda = self.lmbda * fraction * self.prior(docs)
             tf.summary.scalar('lda_loss', loss_lda)
+
+        # Determine if we should be using only word2vec loss or if we should add in LDA loss based on switch_loss Variable
         loss = tf.cond(step < switch_loss, lambda: loss_word2vec, lambda: loss_word2vec + loss_lda)
+        # Add current loss to moving average of loss
         loss_avgs_op = self.moving_avgs.apply([loss_lda, loss_word2vec, loss])
+        
+        # Init the optimizer
         with tf.control_dependencies([loss_avgs_op]):
             optimizer = tf.contrib.layers.optimize_loss(loss, tf.train.get_global_step(), self.learning_rate, 'Adam',
                                                         name='Optimizer')
+        
+        # Initialize all variables
         self.sesh.run(tf.global_variables_initializer(), options=tf.RunOptions(report_tensor_allocations_upon_oom=True))
+        
+        # Create a merged summary of variables
         merged = tf.summary.merge_all()
-        to_return = [
-            x, y, docs, additional_features, step, switch_loss, word_context, doc_context, context,
-            loss_word2vec, fraction, loss_lda, loss, loss_avgs_op, optimizer, self.mixture_doc.Doc_Embedding,
-            self.mixture_doc.topic_embedding, self.w_embed.Embedding, self.w_embed.nce_weights,
-            self.w_embed.nce_biases, merged]
-        if self.num_additional_features:
-            for i in range(self.num_additional_features):
-                to_return.append(self.additional_features_list[i].Doc_Embedding)
-                to_return.append(self.additional_features_list[i].topic_embedding)
 
-            to_return.extend(feature_lookup)
+        to_return = [x, y, docs, step, switch_loss, word_context, doc_context,
+                     loss_word2vec, fraction, loss_lda, loss, loss_avgs_op, optimizer, merged]
+
+
         return to_return
 
-    def train(self, pivot_words, target_words, doc_ids, data_size, num_epochs, context_ids=False, idx_to_word=None,
-              switch_loss_epoch=0, save_every=5000, report_every=100):
+
+    def train(self, pivot_words, target_words, doc_ids, data_size, num_epochs, context_ids=False, 
+              switch_loss_epoch=0, save_every=5000, report_every=100, print_topics_epoch=5, idx_to_word=None):
         """
         Args:
         pivot_words  - List of pivot word indexes (int array)
@@ -176,74 +170,61 @@ class Lda2vec:
         data_size    - Total amount of unique sentences (or data) before splitting into pivot/target words (int)
         num_epochs   - Integer noting how many epochs to train for.
         """
+
+        # Calculate fraction used in DL Loss calculation
         temp_fraction = self.batch_size * 1.0 / data_size
+        # Assign the fraction placeholder variable with the value we calculated
         self.sesh.run(tf.assign(self.fraction, temp_fraction))
-        num_batches = data_size // self.batch_size
-        self.num_batches = num_batches
+
+        # Calculate the number of iterations per epoch so we can figure out when to switch the loss
         iters_per_epoch = int(data_size / self.batch_size) + np.ceil(data_size % self.batch_size)
+        # Calculate what step we would be on @ the switch loss epoch
         switch_loss_step = iters_per_epoch * switch_loss_epoch
+        # Assign the switch loss variable with the step we just calculated
         self.sesh.run(tf.assign(self.switch_loss, switch_loss_step))
+        # Initialize a tensorflow Saver object
         saver = tf.train.Saver()
+        # Initialize a tensorflow summary writer so we can save logs
         writer = tf.summary.FileWriter(self.logdir + '/', graph=self.sesh.graph)
+
+        # Iterate over the number of epochs we want to train for
         for e in range(num_epochs):
             print('\nEPOCH:', e + 1)
-            for i in range(num_batches + 1):
-                if i < num_batches:
-                    x_batch = pivot_words[i * self.batch_size:i * self.batch_size + self.batch_size]
-                    y_batch = target_words[i * self.batch_size:i * self.batch_size + self.batch_size]
-                    doc_batch = doc_ids[i * self.batch_size:i * self.batch_size + self.batch_size]
-                    if type(context_ids) == bool:
-                        pass
-                    elif context_ids.shape[0] == 1:
-                        feature_batch = context_ids[0][i * self.batch_size:i * self.batch_size + self.batch_size]
-                        feature_batch = np.expand_dims(feature_batch, 0)
-                    else:
-                        feature_batch = context_ids[:, i * self.batch_size:i * self.batch_size + self.batch_size]
-                else:
-                    x_batch = pivot_words[i * self.batch_size:]
-                    y_batch = target_words[i * self.batch_size:]
-                    doc_batch = doc_ids[i * self.batch_size:]
-                    if type(context_ids) == bool:
-                        pass
-                    elif context_ids.shape[0] == 1:
-                        feature_batch = context_ids[0][i * self.batch_size:]
-                        feature_batch = np.expand_dims(feature_batch, 0)
-                    else:
-                        feature_batch = context_ids[:, i * self.batch_size:]
-                if type(context_ids) == bool:
-                    feed_dict = {self.x: x_batch, self.y: y_batch, self.docs: doc_batch}
-                else:
-                    feed_dict = {self.x: x_batch, self.y: y_batch, self.docs: doc_batch,
-                                 self.additional_features: feature_batch}
+            # Get a batch worth of data
+            for p, t, d in utils.chunks(self.batch_size, pivot_words, target_words, doc_ids):
+                # Create the feed dict from the batched data
+                feed_dict = {self.x: p, self.y: t, self.docs: d}
+
+                # Run a step of the model
                 summary, _, l, lw2v, llda, step = self.sesh.run(
                     [self.merged, self.optimizer, self.loss, self.loss_word2vec, self.loss_lda, self.step],
                     feed_dict=feed_dict)
+
+                
                 if step > 0 and step % report_every == 0:
                     print('STEP', step, 'LOSS', l, 'w2v', lw2v, 'lda', llda)
                 if step > 0 and step % save_every == 0:
-                    idxs = np.arange(self.num_topics)
-                    words, sims = self.get_k_closest(idxs, in_type='topic', idx_to_word=idx_to_word, k=11)
                     writer.add_summary(summary, step)
                     writer.flush()
                     writer.close()
                     save_path = saver.save(self.sesh, self.logdir + '/model.ckpt')
                     writer = tf.summary.FileWriter(self.logdir + '/', graph=self.sesh.graph)
+            
+            if e>0 and (e+1)%print_topics_epoch==0:
+                idxs = np.arange(self.num_topics)
+                words, sims = self.get_k_closest(idxs, in_type='topic', idx_to_word=idx_to_word, k=11)
 
         save_path = saver.save(self.sesh, self.logdir + '/model.ckpt')
 
-    def predict(self, pivot_words, doc_ids, temp_batch_size):
-        context = self.sesh.run([self.context], feed_dict={self.x: pivot_words})
-
     def compute_normed_embeds(self):
         self.normed_embed_dict = {}
-        norm = tf.sqrt(tf.reduce_sum(self.topic_embedding ** 2, 1, keep_dims=True))
-        self.normed_embed_dict['topic'] = self.topic_embedding / norm
-        norm = tf.sqrt(tf.reduce_sum(self.word_embedding ** 2, 1, keep_dims=True))
-        self.normed_embed_dict['word'] = self.word_embedding / norm
-        norm = tf.sqrt(tf.reduce_sum(self.doc_embedding ** 2, 1, keep_dims=True))
-        self.normed_embed_dict['doc'] = self.doc_embedding / norm
-        self.idxs_in = tf.placeholder(tf.int32, shape=[
-            None], name='idxs')
+        norm = tf.sqrt(tf.reduce_sum(self.mixture.topic_embedding ** 2, 1, keep_dims=True))
+        self.normed_embed_dict['topic'] = self.mixture.topic_embedding / norm
+        norm = tf.sqrt(tf.reduce_sum(self.w_embed.embedding ** 2, 1, keep_dims=True))
+        self.normed_embed_dict['word'] = self.w_embed.embedding / norm
+        norm = tf.sqrt(tf.reduce_sum(self.mixture.doc_embedding ** 2, 1, keep_dims=True))
+        self.normed_embed_dict['doc'] = self.mixture.doc_embedding / norm
+        self.idxs_in = tf.placeholder(tf.int32, shape=[None], name='idxs')
         self.compute_normed = True
 
     def get_k_closest(self, idxs, in_type='word', vs_type='word', k=10, idx_to_word=None):
@@ -271,8 +252,9 @@ class Lda2vec:
             1, 0]))
         feed_dict = {self.idxs_in: idxs}
         sim, sim_idxs = self.sesh.run(tf.nn.top_k(self.cosine_similarity, k=k), feed_dict=feed_dict)
-        print('---------Closest words to given indexes----------')
         if idx_to_word:
+            print('---------Closest words to given indexes----------')
+
             for i, idx in enumerate(idxs):
                 if in_type == 'word':
                     in_word = idx_to_word[idx]
