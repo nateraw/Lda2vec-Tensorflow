@@ -1,7 +1,8 @@
 from lda2vec import utils, model
 
-# Hyperparameters
+# Path to preprocessed data
 data_path  = "data/clean_data"
+# Whether or not to load saved embeddings file
 load_embeds = True
 
 # Load data from files
