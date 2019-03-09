@@ -2,8 +2,6 @@
 Tensorflow 1.5 implementation of Chris Moody's Lda2vec, adapted from @meereeum
 
 ## Note
-**Readme is not up to date as of March 6th 2019.** Many changes are being made - once they're done the readme will be updated.
-
 This algorithm is very much so a research algorithm. It doesn't always work so well, and you have to train it for a long time. As the author noted in the paper, most of the time normal LDA will work better.
 
 Note that you should run this algorithm for **at least 100 epochs** before expecting to see any results. The algorithm is meant to run for a very long time. 
@@ -27,40 +25,36 @@ At the most basic level, if you would like to get your data processed for lda2ve
 you can do the following:
 
 ```python
+import pandas as pd
+from lda2vec.nlppipe import Preprocessor
+
 # Data directory
 data_dir ="data"
 # Where to save preprocessed data
 clean_data_dir = "data/clean_data"
 # Name of input file. Should be inside of data_dir
 input_file = "20_newsgroups.txt"
-# Should we load glove vectors from file?
-load_glove_vecs = False
-# Spacy model to use
-nlp = "en_core_web_lg" # "en", "en_core_web_sm", or any other Spacy Language model you have
-# Number of tokens to cut documents off at
-maxlen = 100
-# Maximum number of words to keep in your vocabulary
-max_features = 30000
+# Should we load pretrained embeddings from file
+load_embeds = True
 
 # Read in data file
 df = pd.read_csv(data_dir+"/"+input_file, sep="\t")
 
 # Initialize a preprocessor
-P = Preprocessor(df, # Data loaded into dataframe. Each row has a document.
-                "texts", # Name of text column in your dataframe
-                max_features=max_features,
-                maxlen=maxlen,
-                nlp=nlp)
+P = Preprocessor(df, "texts", max_features=30000, maxlen=10000, min_count=30)
 
 # Run the preprocessing on your dataframe
 P.preprocess()
 
-# Optionally, you can load and save glove vectors from file
-if load_glove_vecs:
-    embedding_matrix = P.load_glove("PATH/TO/GLOVE/glove.6B.300d.txt")
-    P.save_data(clean_data_dir, embedding_matrix=embedding_matrix)
+# Load embeddings from file if we choose to do so
+if load_embeds:
+    # Load embedding matrix from file path - change path to where you saved them
+    embedding_matrix = P.load_glove("glove_embeddings/glove.6B.300d.txt")
 else:
-    P.save_data(clean_data_dir)
+    embedding_matrix = None
+
+# Save data to data_dir
+P.save_data(clean_data_dir, embedding_matrix=embedding_matrix)
 ```
 
 When you run the twenty newsgroups preprocessing example, it will create a directory tree that looks like this:
@@ -87,38 +81,54 @@ load_preprocessed_data function and then use that data to instantiate and train 
 ```python
 from lda2vec import utils, model
 
+# Path to preprocessed data
 data_path  = "data/clean_data"
-num_topics = 20
-num_epochs = 20
+# Whether or not to load saved embeddings file
+load_embeds = True
 
-# Load data from file - Do not load embeddings
-(idx_to_word, word_to_idx, freqs, pivot_ids, target_ids, doc_ids) = utils.load_preprocessed_data(data_path)
+# Load data from files
+(idx_to_word, word_to_idx, freqs, pivot_ids,
+ target_ids, doc_ids, embed_matrix) = utils.load_preprocessed_data(data_path, load_embed_matrix=load_embeds)
 
-# Load data from file - Load embeddings
-# (idx_to_word, word_to_idx, freqs, pivot_ids, target_ids, doc_ids, embed_matrix) = utils.load_preprocessed_data(data_path, load_embed_matrix=True)
-
-
-# Hyperparameters
+# Number of unique documents
 num_docs = doc_ids.max() + 1
+# Number of unique words in vocabulary (int)
 vocab_size = len(freqs)
-embed_size = 128 # If you loaded the embed matrix, use embed_matrix.shape[1]
+# Embed layer dimension size
+# If not loading embeds, change 128 to whatever size you want.
+embed_size = embed_matrix.shape[1] if load_embeds else 128
+# Number of topics to cluster into
+num_topics = 20
+# Amount of iterations over entire dataset
+num_epochs = 200
+# Batch size - Increase/decrease depending on memory usage
+batch_size = 4096
+# Epoch that we want to "switch on" LDA loss
+switch_loss_epoch = 0
+# Pretrained embeddings value
+pretrained_embeddings = embed_matrix if load_embeds else None
+# If True, save logdir, otherwise don't
+save_graph = True
+
 
 # Initialize the model
-m = model(num_docs, # Number of documents in your corpus
-          vocab_size, # Number of unique words in your vocabulary
-          num_topics=num_topics, # Number of topics to learn
-          embedding_size=embed_size, # Embedding dimension size
-          load_embeds=False, # True if embed_matrix loaded
-          pretrained_embeddings=None, # numpy.ndarray embed_matrix if you loaded it
-          freqs=freqs) # Python list of shape (vocab_size,). Frequencies of each token, same order as embed matrix mappings.
+m = model(num_docs,
+          vocab_size,
+          num_topics,
+          embedding_size=embed_size,
+          pretrained_embeddings=pretrained_embeddings,
+          freqs=freqs,
+          batch_size = batch_size,
+          save_graph_def=save_graph)
 
 # Train the model
-m.train(pivot_ids,target_ids,
+m.train(pivot_ids,
+        target_ids,
         doc_ids,
         len(pivot_ids),
         num_epochs,
-        switch_loss_epoch = 5
-        idx_to_word=idx_to_word)
+        idx_to_word=idx_to_word,
+        switch_loss_epoch=switch_loss_epoch)
 ```
 
 ### Visualizing the Results
