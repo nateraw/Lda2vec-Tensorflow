@@ -21,7 +21,7 @@ num_topics = 20
 # Amount of iterations over entire dataset
 num_epochs = 200
 # Batch size - Increase/decrease depending on memory usage
-batch_size = 4096
+batch_size = 500
 # Epoch that we want to "switch on" LDA loss
 switch_loss_epoch = 0
 # Pretrained embeddings value
