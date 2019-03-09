@@ -16,6 +16,9 @@ Clone the repo and run `python setup.py install` to install the package as is or
 
 You can also just `pip install lda2vec` (Last updated 2/28/19)
 
+### Pretrained Embeddings
+This repo can load a wide variety of pretrained embedding files (see [nlppipe.py](https://github.com/nateraw/Lda2vec-Tensorflow/blob/5d399a3f21dd3e9a2e84a6220d5f9e3147a3591b/lda2vec/nlppipe.py#L115) for more info). The examples are all using GloVe embeddings. You can download them from [here](https://github.com/stanfordnlp/GloVe). 
+
 ### Preprocessing
 
 The preprocessing is all done through the "nlppipe.py" file using Spacy. Feel free to use your own preprocessing, if you like.
