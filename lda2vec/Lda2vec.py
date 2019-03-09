@@ -14,7 +14,7 @@ class Lda2vec:
     def __init__(self, num_unique_documents, vocab_size, num_topics, freqs=None, 
                  save_graph_def=True, embedding_size=128, num_sampled=40,
                  learning_rate=0.001, lmbda=200.0, alpha=None, power=0.75, batch_size=500, logdir='logdir',
-                 restore=False, fixed_words=False, factors_in=None, w_in=None):
+                 restore=False, fixed_words=False, factors_in=None, pretrained_embeddings=None):
         """Summary
         
         Args:
@@ -34,7 +34,7 @@ class Lda2vec:
             restore (bool, optional): When True, we will restore the model from the logdir parameter's location
             fixed_words (bool, optional): Description
             factors_in (None, optional): Pretrained Topic Embedding (shape should be [num_topics, embedding_size])
-            w_in (None, optional): Description
+            pretrained_embeddings (None, optional): Description
         
         """
         self.config = tf.ConfigProto()
@@ -54,7 +54,7 @@ class Lda2vec:
         self.alpha = alpha
         self.power = power
         self.batch_size = batch_size
-        self.w_in = w_in
+        self.pretrained_embeddings = pretrained_embeddings
         self.factors_in = factors_in
         self.compute_normed = False
         self.fixed_words = fixed_words
@@ -64,8 +64,8 @@ class Lda2vec:
             self.date = datetime.now().strftime('%y%m%d_%H%M')
             self.logdir = ('{}_{}').format(self.logdir, self.date)
 
-            if type(w_in) !=None:
-                W_in = tf.constant(w_in, name="word_embedding") if fixed_words else tf.get_variable("word_embedding", shape=[self.vocab_size,self.embedding_size], initializer=tf.constant_initializer(w_in))
+            if type(pretrained_embeddings) !=None:
+                W_in = tf.constant(pretrained_embeddings, name="word_embedding") if fixed_words else tf.get_variable("word_embedding", shape=[self.vocab_size,self.embedding_size], initializer=tf.constant_initializer(pretrained_embeddings))
 
 
             self.w_embed = W.Word_Embedding(self.embedding_size, self.vocab_size, self.num_sampled,
@@ -91,20 +91,19 @@ class Lda2vec:
             self.loss_word2vec, self.fraction, self.loss_lda, self.loss, self.loss_avgs_op, self.optimizer, self.merged) = handles
 
 
-    def prior(self, docs):
+    def prior(self):
+        """Computes Dirichlet Prior.
+        
+        Returns:
+            TYPE: Dirichlet Prior Value
+        """
         doc_prior = DL.dirichlet_likelihood(self.mixture.doc_embedding, alpha=self.alpha)
 
         return doc_prior
 
     def _build_graph(self):
+        """Builds the Lda2vec model graph.
         """
-        Args:
-
-        x = pivot words (int)
-        y = context words (int)
-        docs = docs at pivot (int)
-        """
-
         # Model Inputs
         # Pivot Words
         x = tf.placeholder(tf.int32, shape=[None], name='x_pivot_idxs')
@@ -133,7 +132,7 @@ class Lda2vec:
         # Compute LDA Loss
         with tf.name_scope('lda_loss'):
             fraction = tf.Variable(1, trainable=False, dtype=tf.float32, name='fraction')
-            loss_lda = self.lmbda * fraction * self.prior(docs)
+            loss_lda = self.lmbda * fraction * self.prior()
             tf.summary.scalar('lda_loss', loss_lda)
 
         # Determine if we should be using only word2vec loss or if we should add in LDA loss based on switch_loss Variable
@@ -159,18 +158,24 @@ class Lda2vec:
         return to_return
 
 
-    def train(self, pivot_words, target_words, doc_ids, data_size, num_epochs, context_ids=False, 
-              switch_loss_epoch=0, save_every=5000, report_every=100, print_topics_epoch=5, idx_to_word=None):
-        """
+    def train(self, pivot_words, target_words, doc_ids, data_size, num_epochs, switch_loss_epoch=0,
+              save_every=1, report_every=1, print_topics_every=5, idx_to_word=None):
+        """Train the Lda2vec Model. pivot_words, target_words, and doc_ids should be
+        the same size.
+        
         Args:
-        pivot_words  - List of pivot word indexes (int array)
-        target_words - List of target words indexes (int array)
-        doc_ids      - List of Document Id's linked to pivot and target words (int array)
-        context_ids  - List of Additonal contexts (ex. zip code)
-        data_size    - Total amount of unique sentences (or data) before splitting into pivot/target words (int)
-        num_epochs   - Integer noting how many epochs to train for.
+            pivot_words (np.array): Array of word idxs corresponding to pivot words
+            target_words (np.array): Array of word idxs corresponding to target words
+            doc_ids (TYPE): Document IDs linking word idxs to their docs
+            data_size (TYPE): Length of pivot_words array
+            num_epochs (TYPE): Number of epochs to train model
+            switch_loss_epoch (int, optional): Epoch to switch on LDA loss. LDA loss not learned
+                                               until this epoch
+            save_every (int, optional): Save model every "save_every" epoch
+            report_every (int, optional): Report model metrics every "report_every" epoch.
+            print_topics_every (int, optional): Print top 10 words in each topic every "print_topics_every" 
+            idx_to_word (None, optional): IDX to word mapping - Required if you want to see word-topic membership
         """
-
         # Calculate fraction used in DL Loss calculation
         temp_fraction = self.batch_size * 1.0 / data_size
         # Assign the fraction placeholder variable with the value we calculated
@@ -182,41 +187,57 @@ class Lda2vec:
         switch_loss_step = iters_per_epoch * switch_loss_epoch
         # Assign the switch loss variable with the step we just calculated
         self.sesh.run(tf.assign(self.switch_loss, switch_loss_step))
-        # Initialize a tensorflow Saver object
-        saver = tf.train.Saver()
-        # Initialize a tensorflow summary writer so we can save logs
-        writer = tf.summary.FileWriter(self.logdir + '/', graph=self.sesh.graph)
+
+        if self.save_graph_def:
+            # Initialize a tensorflow Saver object
+            saver = tf.train.Saver()
+            # Initialize a tensorflow summary writer so we can save logs
+            writer = tf.summary.FileWriter(self.logdir + '/', graph=self.sesh.graph)
 
         # Iterate over the number of epochs we want to train for
         for e in range(num_epochs):
             print('\nEPOCH:', e + 1)
             # Get a batch worth of data
             for p, t, d in utils.chunks(self.batch_size, pivot_words, target_words, doc_ids):
+                
                 # Create the feed dict from the batched data
                 feed_dict = {self.x: p, self.y: t, self.docs: d}
-
-                # Run a step of the model
-                summary, _, l, lw2v, llda, step = self.sesh.run(
-                    [self.merged, self.optimizer, self.loss, self.loss_word2vec, self.loss_lda, self.step],
-                    feed_dict=feed_dict)
-
                 
-                if step > 0 and step % report_every == 0:
-                    print('STEP', step, 'LOSS', l, 'w2v', lw2v, 'lda', llda)
-                if step > 0 and step % save_every == 0:
-                    writer.add_summary(summary, step)
-                    writer.flush()
-                    writer.close()
-                    save_path = saver.save(self.sesh, self.logdir + '/model.ckpt')
-                    writer = tf.summary.FileWriter(self.logdir + '/', graph=self.sesh.graph)
-            
-            if e>0 and (e+1)%print_topics_epoch==0:
-                idxs = np.arange(self.num_topics)
-                words, sims = self.get_k_closest(idxs, in_type='topic', idx_to_word=idx_to_word, k=11)
+                # Values we want to fetch whenever we run the model
+                fetches = [self.merged, self.optimizer, self.loss,
+                           self.loss_word2vec, self.loss_lda, self.step]
+                
+                # Run a step of the model
+                summary, _, l, lw2v, llda, step = self.sesh.run(fetches, feed_dict=feed_dict)
 
-        save_path = saver.save(self.sesh, self.logdir + '/model.ckpt')
+            # Prints log every "report_every" epoch
+            if (e+1) % report_every == 0:
+                print('LOSS', l, 'w2v', lw2v, 'lda', llda)
+
+            # Saves model every "save_every" epoch
+            if (e+1) % save_every == 0 and self.save_graph_def:
+                writer.add_summary(summary, step)
+                writer.flush()
+                writer.close()
+                save_path = saver.save(self.sesh, self.logdir + '/model.ckpt')
+                writer = tf.summary.FileWriter(self.logdir + '/', graph=self.sesh.graph)
+            
+            # Prints out membership of words in each topic every "print_topics_every" epoch
+            if e>0 and (e+1)%print_topics_every==0:
+                idxs = np.arange(self.num_topics)
+                words, sims = self.get_k_closest(idxs, in_type='topic', idx_to_word=idx_to_word, k=10, verbose=True)
+
+        # Save after all epochs are finished, but only if we didn't just save
+        if self.save_graph_def and (e+1) % save_every != 0:
+            writer.add_summary(summary, step)
+            writer.flush()
+            writer.close()        
+            save_path = saver.save(self.sesh, self.logdir + '/model.ckpt')
 
     def compute_normed_embeds(self):
+        """Normalizes embeddings so we can measure cosine similarity
+        between different embedding matrixes.
+        """
         self.normed_embed_dict = {}
         norm = tf.sqrt(tf.reduce_sum(self.mixture.topic_embedding ** 2, 1, keep_dims=True))
         self.normed_embed_dict['topic'] = self.mixture.topic_embedding / norm
@@ -227,33 +248,38 @@ class Lda2vec:
         self.idxs_in = tf.placeholder(tf.int32, shape=[None], name='idxs')
         self.compute_normed = True
 
-    def get_k_closest(self, idxs, in_type='word', vs_type='word', k=10, idx_to_word=None):
-        """
+    def get_k_closest(self, idxs, in_type='word', vs_type='word', k=10, idx_to_word=None, verbose=False):
+        """Gets k closest vs_type embeddings for every idx of in_type embedding given.
+        Options for the in_type and vs_type are ["word", "topic", "doc"].
+        
         Args:
-        idxs - numpy array of indexes to check similarity to
-        in_type - string denoting what kind of embedding to check
-                  similarity to. Options are "word", "doc", and "topic"
-        out_type - same as above, except it will be what we are comparing the
-                   in indexes to.
-        k - Number of closest examples to get
-        idx_to_word - index to word dictionary mapping. If passed, it will translate the indexes.
+            idxs (np.array): Array of indexes you want to get similarities to
+            in_type (str, optional): idxs will query this embedding matrix
+            vs_type (str, optional): embeddings to compare to in_type embedding lookup
+            k (int, optional): Number of vs_type embeddings to return per idx
+            idx_to_word (dict, optional): IDX to word mapping
+            verbose (bool, optional): Should we print out the top k words per epoch? False by default.
+                                      Only prints if idx_to_word is passed too. 
+        
+        Returns:
+            sim: Actual embeddings that are similar to each idx. shape [idxs.shape[0], k, self.embed_size]
+            sim_idxs: Indexes of the sim embeddings. shape [idxs.shape[0], k]
 
-        NOTE: Acceptable pairs include
-        word - word
-        word - topic
-        topic - word
-        doc - doc
-
+        NOTE: Acceptable pairs include:
+            word - word
+            word - topic
+            topic - word
+            doc - doc
         """
         if self.compute_normed == False:
             self.compute_normed_embeds()
         self.batch_array = tf.nn.embedding_lookup(self.normed_embed_dict[in_type], self.idxs_in)
-        self.cosine_similarity = tf.matmul(self.batch_array, tf.transpose(self.normed_embed_dict[vs_type], [
-            1, 0]))
+        self.cosine_similarity = tf.matmul(self.batch_array, tf.transpose(self.normed_embed_dict[vs_type], [1, 0]))
         feed_dict = {self.idxs_in: idxs}
         sim, sim_idxs = self.sesh.run(tf.nn.top_k(self.cosine_similarity, k=k), feed_dict=feed_dict)
         if idx_to_word:
-            print('---------Closest words to given indexes----------')
+            if verbose and vs_type=="word":
+                print('---------Closest {} words to given indexes----------'.format(k))
 
             for i, idx in enumerate(idxs):
                 if in_type == 'word':
@@ -265,14 +291,20 @@ class Lda2vec:
                     vs_idx = sim_idxs[i][vs_i]
                     vs_word = idx_to_word[vs_idx]
                     vs_word_list.append(vs_word)
+                if verbose and vs_type=="word":
+                    print(in_word, ':', (', ').join(vs_word_list))
 
-                print(in_word, ':', (', ').join(vs_word_list))
-
-        return (
-            sim, sim_idxs)
+        return (sim, sim_idxs)
 
     def save_weights_to_file(self, word_embed_path='word_weights', doc_embed_path='doc_weights',
                              topic_embed_path='topic_weights'):
+        """Saves embedding matrixes to file.
+        
+        Args:
+            word_embed_path (str, optional): Path and name where you want to save word embeddings
+            doc_embed_path (str, optional): Path and name where you want to save doc embeddings
+            topic_embed_path (str, optional): Path and name where you want to save topic embeddings
+        """
         word_embeds = self.sesh.run(self.word_embedding)
         np.save(word_embed_path, word_embeds)
         doc_embeds = self.sesh.run(self.doc_embedding)

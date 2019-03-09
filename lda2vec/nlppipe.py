@@ -8,7 +8,7 @@ from tqdm import tqdm
 import os
 
 class Preprocessor:
-    def __init__(self, df, textcol, max_features=30000, maxlen=100, window_size=5, nlp="en_core_web_sm",
+    def __init__(self, df, textcol, max_features=30000, maxlen=None, window_size=5, nlp="en_core_web_sm",
                  bad=set(["ax>", '`@("', '---', '===', '^^^', "AX>", "GIZ"]), token_type="lower", min_count=None):
         """Summary
         
@@ -92,8 +92,9 @@ class Preprocessor:
         self.idx_data = self.tokenizer.texts_to_sequences(self.texts_clean)
 
         # Limit the data to be maxlen
-        for i, d in enumerate(self.idx_data):
-            self.idx_data[i] = d[:self.maxlen]
+        if self.maxlen != None:
+            for i, d in enumerate(self.idx_data):
+                self.idx_data[i] = d[:self.maxlen]
 
     def get_supplemental_data(self):
 
