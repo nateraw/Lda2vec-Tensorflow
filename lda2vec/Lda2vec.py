@@ -64,32 +64,63 @@ class Lda2vec:
             self.date = datetime.now().strftime('%y%m%d_%H%M')
             self.logdir = ('{}_{}').format(self.logdir, self.date)
 
+            # Load pretrained embeddings if provided.
             if type(pretrained_embeddings) !=None:
                 W_in = tf.constant(pretrained_embeddings, name="word_embedding") if fixed_words else tf.get_variable("word_embedding", shape=[self.vocab_size,self.embedding_size], initializer=tf.constant_initializer(pretrained_embeddings))
 
 
+            # Initialize the word embedding
             self.w_embed = W.Word_Embedding(self.embedding_size, self.vocab_size, self.num_sampled,
                                             W_in=W_in, freqs=self.freqs,
                                             power=self.power)
-            self.mixture = M.EmbedMixture(self.num_unique_documents, self.num_topics, self.embedding_size,
-                                              name='doc')
+            # Initialize the Topic-Document Mixture
+            self.mixture = M.EmbedMixture(self.num_unique_documents, self.num_topics, self.embedding_size)
 
 
+            # Builds the graph and returns variables within it
             handles = self._build_graph()
+
+
             for handle in handles:
                 tf.add_to_collection(Lda2vec.RESTORE_KEY, handle)
 
-            (self.x, self.y, self.docs, self.step, self.switch_loss, self.word_context, self.doc_context,
-            self.loss_word2vec, self.fraction, self.loss_lda, self.loss, self.loss_avgs_op, self.optimizer, self.merged) = handles
+            # Add Word Embedding Variables to collection
+            tf.add_to_collection(Lda2vec.RESTORE_KEY, self.w_embed.embedding)
+            tf.add_to_collection(Lda2vec.RESTORE_KEY, self.w_embed.nce_weights)
+            tf.add_to_collection(Lda2vec.RESTORE_KEY, self.w_embed.nce_biases)
+
+            # Add Doc Mixture Variables to collection
+            tf.add_to_collection(Lda2vec.RESTORE_KEY, self.mixture.doc_embedding)
+            tf.add_to_collection(Lda2vec.RESTORE_KEY, self.mixture.topic_embedding)
+
+            (self.x, self.y, self.docs, self.step, self.switch_loss,
+            self.word_context, self.doc_context, self.loss_word2vec,
+            self.fraction, self.loss_lda, self.loss, self.loss_avgs_op,
+            self.optimizer, self.merged) = handles
 
         else:
             meta_graph = logdir + '/model.ckpt'
             tf.train.import_meta_graph(meta_graph + '.meta').restore(self.sesh, meta_graph)
             handles = self.sesh.graph.get_collection(Lda2vec.RESTORE_KEY)
 
-            (self.x, self.y, self.docs, self.step, self.switch_loss, self.word_context, self.doc_context,
-            self.loss_word2vec, self.fraction, self.loss_lda, self.loss, self.loss_avgs_op, self.optimizer, self.merged) = handles
+            (self.x, self.y, self.docs, self.step, self.switch_loss,
+            self.word_context, self.doc_context, self.loss_word2vec,
+            self.fraction, self.loss_lda, self.loss, self.loss_avgs_op,
+            self.optimizer, self.merged, embedding, nce_weights, nce_biases,
+            doc_embedding, topic_embedding) = handles
 
+            self.w_embed = W.Word_Embedding(self.embedding_size, self.vocab_size, self.num_sampled,
+                                            W_in=embedding, freqs=self.freqs,
+                                            power=self.power,
+                                            nce_w_in=nce_weights,
+                                            nce_b_in=nce_biases)
+
+            # Initialize the Topic-Document Mixture
+            self.mixture = M.EmbedMixture(self.num_unique_documents,
+                                          self.num_topics,
+                                          self.embedding_size,
+                                          W_in=doc_embedding,
+                                          factors_in=topic_embedding)
 
     def prior(self):
         """Computes Dirichlet Prior.
@@ -142,7 +173,10 @@ class Lda2vec:
         
         # Init the optimizer
         with tf.control_dependencies([loss_avgs_op]):
-            optimizer = tf.contrib.layers.optimize_loss(loss, tf.train.get_global_step(), self.learning_rate, 'Adam',
+            optimizer = tf.contrib.layers.optimize_loss(loss,
+                                                        tf.train.get_global_step(),
+                                                        self.learning_rate,
+                                                        'Adam',
                                                         name='Optimizer')
         
         # Initialize all variables

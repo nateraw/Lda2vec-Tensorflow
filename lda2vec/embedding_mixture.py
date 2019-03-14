@@ -20,28 +20,25 @@ class EmbedMixture:
         self.temperature = temperature
         self.name = name
         scalar = 1 / np.sqrt(n_documents + n_topics)
-        if not isinstance(W_in, np.ndarray):
-            self.doc_embedding = tf.Variable(tf.random_normal([n_documents, n_topics], mean=0, stddev=50 * scalar), name=self.name + '_' + 'doc_embedding')
-        else:
-            init = tf.constant(W_in)
-            self.doc_embedding = tf.get_variable(self.name + '_' + 'doc_embedding', initializer=init)
-        with tf.name_scope(self.name + '_' + 'Topics'):
-            if not isinstance(factors_in, np.ndarray):
-                self.topic_embedding = tf.get_variable(self.name + '_' + 'topic_embedding', shape=[n_topics, n_dim], dtype=tf.float32, initializer=tf.orthogonal_initializer(gain=scalar))
-            else:
-                init = tf.constant(factors_in)
-                self.topic_embedding = tf.get_variable(self.name + '_' + 'topic_embedding', initializer=init)
+        
+        self.doc_embedding = tf.Variable(tf.random_normal([n_documents, n_topics], mean=0, stddev=50 * scalar),
+                                         name='doc_embedding') if W_in is None else W_in
+
+        self.topic_embedding = tf.get_variable('topic_embedding', shape=[n_topics, n_dim],
+                                               dtype=tf.float32,
+                                               initializer=tf.orthogonal_initializer(gain=scalar)) if factors_in is None else factors_in
+
 
     def __call__(self, doc_ids=None, update_only_docs=False, softmax=True):
         proportions = self.proportions(doc_ids, softmax=softmax)
-        w_sum = tf.matmul(proportions, self.topic_embedding, name=self.name + '_' + 'docs_mul_topics')
+        w_sum = tf.matmul(proportions, self.topic_embedding, name='docs_mul_topics')
         return w_sum
 
     def proportions(self, doc_ids=None, softmax=False):
         if doc_ids == None:
             w = self.doc_embedding
         else:
-            w = tf.nn.embedding_lookup(self.doc_embedding, doc_ids, name=self.name + '_' + 'doc_proportions')
+            w = tf.nn.embedding_lookup(self.doc_embedding, doc_ids, name='doc_proportions')
         if softmax:
             return tf.nn.softmax(w / self.temperature)
         else:

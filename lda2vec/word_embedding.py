@@ -3,7 +3,7 @@ import tensorflow as tf
 
 class Word_Embedding():
     def __init__(self, embedding_size, vocab_size, sample_size, power=1.,
-                 freqs=None, W_in=None):
+                 freqs=None, W_in=None, nce_w_in=None, nce_b_in=None):
         self.vocab_size = vocab_size
         self.sample_size = sample_size
         self.power = power
@@ -14,8 +14,9 @@ class Word_Embedding():
 
         # Construct nce loss for word embeddings
         self.nce_weights = tf.Variable(tf.truncated_normal([vocab_size, embedding_size],
-                                                           stddev=tf.sqrt(1 / embedding_size)), name="nce_weights")
-        self.nce_biases = tf.Variable(tf.zeros([vocab_size]), name="nce_biases")
+                                                           stddev=tf.sqrt(1 / embedding_size)),
+                                                           name="nce_weights") if nce_w_in is None else nce_w_in
+        self.nce_biases = tf.Variable(tf.zeros([vocab_size]), name="nce_biases") if nce_b_in is None else nce_b_in
 
     def __call__(self, embed, train_labels):
         with tf.name_scope("negative_sampling"):

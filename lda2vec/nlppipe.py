@@ -64,7 +64,7 @@ class Preprocessor:
             # Variable for holding cleaned tokens (to be joined later)
             doc_texts = []
             for token in doc:
-                if not token.like_email and not token.like_url:
+                if not token.like_email and not token.like_url and not token.is_punct:
                     if self.token_type == "lemma":
                         doc_texts.append(token.lemma_)
                     elif self.token_type=="lower":
