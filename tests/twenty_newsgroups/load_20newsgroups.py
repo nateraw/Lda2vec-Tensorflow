@@ -14,7 +14,7 @@ load_embeds = True
 df = pd.read_csv(data_dir+"/"+input_file, sep="\t")
 
 # Initialize a preprocessor
-P = Preprocessor(df, "texts", max_features=30000, maxlen=10000, min_count=30)
+P = Preprocessor(df, "texts", max_features=30000, maxlen=10000, min_count=30, nlp="en_core_web_lg")
 
 # Run the preprocessing on your dataframe
 P.preprocess()

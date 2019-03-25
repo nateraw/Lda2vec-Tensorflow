@@ -65,9 +65,10 @@ class Lda2vec:
             self.logdir = ('{}_{}').format(self.logdir, self.date)
 
             # Load pretrained embeddings if provided.
-            if type(pretrained_embeddings) !=None:
+            if isinstance(pretrained_embeddings, np.ndarray):
                 W_in = tf.constant(pretrained_embeddings, name="word_embedding") if fixed_words else tf.get_variable("word_embedding", shape=[self.vocab_size,self.embedding_size], initializer=tf.constant_initializer(pretrained_embeddings))
-
+            else:
+                W_in = None
 
             # Initialize the word embedding
             self.w_embed = W.Word_Embedding(self.embedding_size, self.vocab_size, self.num_sampled,
