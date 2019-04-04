@@ -39,7 +39,8 @@ class Preprocessor:
 
         # Here we disable parts of spacy's pipeline - REALLY improves speed.
         self.nlp = spacy.load(nlp, disable = ['ner', 'parser'])
-
+        self.nlp.vocab.add_flag(lambda s: s.lower() in spacy.lang.en.stop_words.STOP_WORDS,
+                                                       spacy.attrs.IS_STOP)
 
     def clean(self, line):
         return ' '.join(w for w in line.split() if not any(t in w for t in self.bad))
@@ -64,9 +65,14 @@ class Preprocessor:
             # Variable for holding cleaned tokens (to be joined later)
             doc_texts = []
             for token in doc:
-                if not token.like_email and not token.like_url and not token.is_punct and not token.like_num and token.is_alpha:
+                # Some options for you - TODO pass attrs dictionary
+                #if not token.like_email and not token.like_url and not token.is_punct and not token.like_num and token.is_alpha:
+                if token.is_alpha and not token.is_stop:
                     if self.token_type == "lemma":
-                        doc_texts.append(token.lemma_)
+                        if token.lemma_ == "-PRON-":
+                            doc_texts.append(token.lower_)
+                        else:
+                            doc_texts.append(token.lemma_)
                     elif self.token_type=="lower":
                         doc_texts.append(token.lower_)
                     else:
@@ -76,11 +82,14 @@ class Preprocessor:
         # Init a tokenizer and fit it with our cleaned texts
         self.tokenizer = Tokenizer(self.max_features, filters="", lower=False)
         self.tokenizer.fit_on_texts(self.texts_clean)
+        self.tokenizer.word_index["<UNK>"] = 0
+        self.tokenizer.word_docs["<UNK>"] = 0
+        self.tokenizer.word_counts["<UNK>"] = 0
 
         # This chunk handles removing words with counts less than min_count
         if self.min_count != None:
             # Get all the words to remove
-            words_to_rm = [w for w,c in self.tokenizer.word_counts.items() if c < self.min_count]
+            words_to_rm = [w for w,c in self.tokenizer.word_counts.items() if c < self.min_count and w != "<UNK>"]
             print("Removing {0} low frequency tokens out of {1} total tokens".format(len(words_to_rm), len(self.tokenizer.word_counts)))
             # Iterate over those words and remove them from the necessary Tokenizer attributes
             for w in words_to_rm:
@@ -109,7 +118,7 @@ class Preprocessor:
 
         # Init empty list to hold frequencies
         self.freqs = []
-        for i in range(1, self.vocab_size+1):
+        for i in range(self.vocab_size):
             token = self.idx_to_word[i]
             self.freqs.append(self.tokenizer.word_counts[token])
     
@@ -125,7 +134,7 @@ class Preprocessor:
         nb_words = self.vocab_size
         embedding_matrix = np.random.normal(emb_mean, emb_std, (nb_words, embed_size))
         for word, i in self.word_to_idx.items():
-            if i >= self.vocab_size: continue
+            if i >= nb_words: continue
             embedding_vector = embeddings_index.get(word)
             if embedding_vector is not None: embedding_matrix[i] = embedding_vector
                 
